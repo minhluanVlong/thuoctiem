@@ -1,0 +1,6 @@
+{
+  "name": "Sổ Thuốc Tiêm Điện Tử",
+  "description": "Ứng dụng hỗ trợ điều dưỡng tự động đối chiếu dữ liệu bệnh viện, lọc thuốc tiêm, ghép phòng bệnh và xuất in sổ thuốc tiêm hằng ngày chuẩn xác, an toàn.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -2,23 +2,18 @@
  * SỔ THUỐC TIÊM ĐIỆN TỬ - Electronic Inpatient Injection Record
  * Hospital medication reconciliation, room matching, and administration workbook.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Syringe,
   AlertTriangle,
   Droplets,
-  FileSpreadsheet,
-  CheckCircle2,
   Sparkles,
-  Printer,
-  ShieldCheck,
-  Building,
-  Info
+  GitCompare,
+  FileSpreadsheet
 } from 'lucide-react';
 
 import {
   RawDrugRecord,
-  RawRoomRecord,
   ProcessedInjectionRecord,
   PendingCheckRecord,
   ExcludedItemRecord,
@@ -29,13 +24,14 @@ import {
 import {
   readWorkbookSheet,
   parseDrugOrderSheet,
-  parseInpatientRoomSheet,
-  formatOrderDate,
 } from './utils/excelParser';
 
 import { processAndMatchHospitalData, sortInjectionRecords } from './utils/matchingEngine';
 import { exportHospitalWorkbook } from './utils/excelExporter';
-import { SAMPLE_DRUG_ORDERS, SAMPLE_ROOM_LIST } from './data/sampleHospitalData';
+import {
+  SAMPLE_DRUG_ORDERS_TODAY,
+  SAMPLE_DRUG_ORDERS_YESTERDAY
+} from './data/sampleHospitalData';
 
 import { Header } from './components/Header';
 import { UploadSection } from './components/UploadSection';
@@ -45,19 +41,17 @@ import { PendingCheckTable } from './components/PendingCheckTable';
 import { ExcludedItemsTable } from './components/ExcludedItemsTable';
 import { PrintModal } from './components/PrintModal';
 import { DuplicateWarningModal } from './components/DuplicateWarningModal';
-import { ManualMatchModal } from './components/ManualMatchModal';
+import { MedicationReconciliationModal } from './components/MedicationReconciliationModal';
 
 export default function App() {
   // Hospital Settings State
-  const [hospitalName, setHospitalName] = useState<string>('Bệnh Viện Đa Khoa / Trung Tâm Y Tế');
-  const [departmentName, setDepartmentName] = useState<string>('Khoa Nội Tổng Hợp');
-  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [hospitalName, setHospitalName] = useState<string>('BỆNH VIỆN ĐA KHOA KV CHỢ LÁCH');
+  const [departmentName, setDepartmentName] = useState<string>('KHOA NỘI TỔNG HỢP - NHI - TRUYỀN NHIỄM');
+  const [selectedDate, setSelectedDate] = useState<string>('31/08/2026');
 
-  // Raw Loaded Data
+  // Raw Loaded Data (Single HIS Excel file)
   const [rawDrugRecords, setRawDrugRecords] = useState<RawDrugRecord[]>([]);
-  const [rawRoomRecords, setRawRoomRecords] = useState<RawRoomRecord[]>([]);
   const [drugFilePreview, setDrugFilePreview] = useState<ColumnMappingPreview | null>(null);
-  const [roomFilePreview, setRoomFilePreview] = useState<ColumnMappingPreview | null>(null);
 
   // Processed Output Data
   const [injections, setInjections] = useState<ProcessedInjectionRecord[]>([]);
@@ -72,43 +66,13 @@ export default function App() {
   // Modals State
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState<boolean>(false);
-  const [selectedPendingForManualMatch, setSelectedPendingForManualMatch] = useState<PendingCheckRecord | null>(null);
+  const [isReconciliationModalOpen, setIsReconciliationModalOpen] = useState<boolean>(false);
 
-  // Handle File 1 Upload (Drug Orders)
-  const handleUploadDrugFile = async (file: File) => {
-    try {
-      const buffer = await file.arrayBuffer();
-      const sheetData = readWorkbookSheet(buffer);
-      const { records, preview } = parseDrugOrderSheet(sheetData, file.name);
-
-      setRawDrugRecords(records);
-      setDrugFilePreview(preview);
-    } catch (err: any) {
-      console.error('Error reading Drug Order file:', err);
-      alert(`Lỗi khi đọc file thuốc: ${err.message || 'File Excel không đúng định dạng'}`);
-    }
-  };
-
-  // Handle File 2 Upload (Inpatient Rooms)
-  const handleUploadRoomFile = async (file: File) => {
-    try {
-      const buffer = await file.arrayBuffer();
-      const sheetData = readWorkbookSheet(buffer);
-      const { records, preview } = parseInpatientRoomSheet(sheetData, file.name);
-
-      setRawRoomRecords(records);
-      setRoomFilePreview(preview);
-    } catch (err: any) {
-      console.error('Error reading Room file:', err);
-      alert(`Lỗi khi đọc file danh sách phòng: ${err.message || 'File Excel không đúng định dạng'}`);
-    }
-  };
-
-  // Run Matching Algorithm
+  // Run Extraction & Matching Algorithm
   const executeProcessing = useCallback((
     drugRecs: RawDrugRecord[],
-    roomRecs: RawRoomRecord[],
-    dateOverride?: string
+    dateOverride?: string,
+    previousDayRecs?: RawDrugRecord[]
   ) => {
     setIsProcessing(true);
 
@@ -116,7 +80,8 @@ export default function App() {
       try {
         const result = processAndMatchHospitalData({
           drugRecords: drugRecs,
-          roomRecords: roomRecs,
+          roomRecords: [], // Self-contained within drugRecords (Khoa Buồng - Giường)
+          previousDayDrugRecords: previousDayRecs || SAMPLE_DRUG_ORDERS_YESTERDAY,
           selectedDate: dateOverride !== undefined ? dateOverride : selectedDate,
         });
 
@@ -134,58 +99,64 @@ export default function App() {
         }
       } catch (err: any) {
         console.error('Processing error:', err);
-        alert(`Lỗi trong quá trình đối chiếu dữ liệu: ${err.message}`);
+        alert(`Lỗi trong quá trình xử lý dữ liệu: ${err.message}`);
       } finally {
         setIsProcessing(false);
       }
     }, 200);
   }, [selectedDate]);
 
-  // Load Realistic Hospital Demo Data
+  // Handle File Upload (Single Drug Orders File)
+  const handleUploadDrugFile = async (file: File) => {
+    try {
+      const buffer = await file.arrayBuffer();
+      const sheetData = readWorkbookSheet(buffer);
+      const { records, preview } = parseDrugOrderSheet(sheetData, file.name);
+
+      setRawDrugRecords(records);
+      setDrugFilePreview(preview);
+
+      // Auto process upon upload
+      executeProcessing(records);
+    } catch (err: any) {
+      console.error('Error reading Drug Order file:', err);
+      alert(`Lỗi khi đọc file thuốc: ${err.message || 'File Excel không đúng định dạng'}`);
+    }
+  };
+
+  // Load Realistic Hospital Demo Data (90 records from BV Đa Khoa KV Chợ Lách)
   const handleLoadDemo = () => {
-    setRawDrugRecords(SAMPLE_DRUG_ORDERS);
+    setHospitalName('BỆNH VIỆN ĐA KHOA KV CHỢ LÁCH');
+    setDepartmentName('KHOA NỘI TỔNG HỢP - NHI - TRUYỀN NHIỄM');
+    setRawDrugRecords(SAMPLE_DRUG_ORDERS_TODAY);
     setDrugFilePreview({
-      fileName: 'FILE_1_HIS_Thong_Ke_Thuoc_Demo.xlsx',
+      fileName: 'thongke_truyendich_thuoc_tiem_31_08_2026.xlsx',
       detectedHeaders: {
-        patientName: 'Họ và tên người bệnh',
-        drugName: 'Tên thuốc',
-        strength: 'Hàm lượng',
-        unit: 'Đơn vị',
-        quantity: 'Số lượng',
-        route: 'Đường dùng',
+        patientName: 'Họ tên người bệnh',
+        gender: 'Giới tính',
+        dob: 'Ngày sinh',
+        patientAddress: 'Địa chỉ',
+        departmentRoomBed: 'Khoa Buồng - Giường',
+        drugName: 'Thuốc',
+        notes: 'Ghi chú',
+        treatmentSheet: 'Tờ điều trị',
+        categoryType: 'Loại',
         orderTime: 'Thời gian y lệnh',
-        orderDate: 'Ngày y lệnh',
-        patientCode: 'Mã người bệnh',
-        medicalRecordCode: 'Mã bệnh án',
+        doctor: 'Bác sĩ chỉ định'
       },
       missingRequired: [],
-      totalRows: SAMPLE_DRUG_ORDERS.length,
+      totalRows: SAMPLE_DRUG_ORDERS_TODAY.length,
     });
 
-    setRawRoomRecords(SAMPLE_ROOM_LIST);
-    setRoomFilePreview({
-      fileName: 'FILE_2_Danh_Sach_Phong_Giuong_Demo.xlsx',
-      detectedHeaders: {
-        patientName: 'Họ và tên bệnh nhân',
-        room: 'Phòng',
-        bed: 'Giường',
-        patientCode: 'Mã người bệnh',
-        medicalRecordCode: 'Mã bệnh án',
-        department: 'Khoa điều trị',
-      },
-      missingRequired: [],
-      totalRows: SAMPLE_ROOM_LIST.length,
-    });
-
-    setSelectedDate('15/08/2026');
-    executeProcessing(SAMPLE_DRUG_ORDERS, SAMPLE_ROOM_LIST, '15/08/2026');
+    setSelectedDate('31/08/2026');
+    executeProcessing(SAMPLE_DRUG_ORDERS_TODAY, '31/08/2026', SAMPLE_DRUG_ORDERS_YESTERDAY);
   };
 
   // Re-run when date selection changes
   const handleDateChange = (newDate: string) => {
     setSelectedDate(newDate);
-    if (rawDrugRecords.length > 0 && rawRoomRecords.length > 0) {
-      executeProcessing(rawDrugRecords, rawRoomRecords, newDate);
+    if (rawDrugRecords.length > 0) {
+      executeProcessing(rawDrugRecords, newDate);
     }
   };
 
@@ -208,11 +179,17 @@ export default function App() {
     );
   };
 
+  // Update a single record (inline edit)
+  const handleUpdateRecord = (updated: ProcessedInjectionRecord) => {
+    setInjections((prev) =>
+      prev.map((item) => (item.id === updated.id ? updated : item))
+    );
+  };
+
   // Remove duplicate record
   const handleRemoveDuplicateRecord = (id: string) => {
     setInjections((prev) => {
       const updated = prev.filter((item) => item.id !== id);
-      // Reindex STT
       return updated.map((item, idx) => ({ ...item, stt: idx + 1 }));
     });
   };
@@ -223,33 +200,6 @@ export default function App() {
       prev.map((item) => ({ ...item, isDuplicate: false }))
     );
     setIsDuplicateModalOpen(false);
-  };
-
-  // Resolve pending check manually
-  const handleConfirmManualMatch = (
-    resolvedInjection: ProcessedInjectionRecord,
-    pendingId: string
-  ) => {
-    // Remove from pending
-    setPendingChecks((prev) => prev.filter((p) => p.id !== pendingId));
-
-    // Add to injections list
-    setInjections((prev) => {
-      const updated = [...prev, resolvedInjection];
-      sortInjectionRecords(updated, 'ROOM_PATIENT_TIME');
-      return updated.map((item, idx) => ({ ...item, stt: idx + 1 }));
-    });
-
-    // Update report count
-    if (report) {
-      setReport({
-        ...report,
-        totalValidInjections: report.totalValidInjections + 1,
-        totalPendingChecks: Math.max(0, report.totalPendingChecks - 1),
-      });
-    }
-
-    setSelectedPendingForManualMatch(null);
   };
 
   // Dismiss pending check
@@ -272,11 +222,9 @@ export default function App() {
 
   // Reset all state
   const handleReset = () => {
-    if (window.confirm('Bạn có chắc chắn muốn làm mới và xóa dữ liệu hiện tại để tải bộ file mới?')) {
+    if (window.confirm('Bạn có chắc chắn muốn làm mới và xóa dữ liệu hiện tại để tải file mới?')) {
       setRawDrugRecords([]);
-      setRawRoomRecords([]);
       setDrugFilePreview(null);
-      setRoomFilePreview(null);
       setInjections([]);
       setPendingChecks([]);
       setExcludedItems([]);
@@ -286,6 +234,7 @@ export default function App() {
   };
 
   const hasData = injections.length > 0 || pendingChecks.length > 0;
+  const reconciliationReport = report?.reconciliationReport || null;
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
@@ -307,20 +256,18 @@ export default function App() {
 
       {/* Main App Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Step 1 & 2: Upload Files & Processing Card */}
+        {/* Upload File & Processing Card */}
         <UploadSection
           drugFilePreview={drugFilePreview}
-          roomFilePreview={roomFilePreview}
           onUploadDrugFile={handleUploadDrugFile}
-          onUploadRoomFile={handleUploadRoomFile}
-          onProcessData={() => executeProcessing(rawDrugRecords, rawRoomRecords)}
+          onProcessData={() => executeProcessing(rawDrugRecords)}
+          onLoadSampleData={handleLoadDemo}
           isProcessing={isProcessing}
           hasData={hasData}
           totalDrugRecords={rawDrugRecords.length}
-          totalRoomRecords={rawRoomRecords.length}
         />
 
-        {/* Step 3: Statistical Overview Cards */}
+        {/* Statistical Overview Cards */}
         {report && (
           <StatsCards
             report={report}
@@ -330,12 +277,12 @@ export default function App() {
           />
         )}
 
-        {/* Step 4: Primary Result Work Area */}
+        {/* Primary Result Work Area */}
         {hasData && (
           <div className="space-y-4">
             {/* Tab Navigation */}
             <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2 rounded-t-xl shadow-2xs">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {/* Main Injections Tab */}
                 <button
                   id="tab-main-injections"
@@ -347,13 +294,30 @@ export default function App() {
                   }`}
                 >
                   <Syringe className="w-4 h-4" />
-                  <span>SỔ THUỐC TIÊM CHÍNH</span>
+                  <span>SỔ THUỐC TIÊM (CHUẨN 7 CỘT)</span>
                   <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
                     activeTab === 'MAIN_INJECTIONS' ? 'bg-teal-800 text-teal-100' : 'bg-slate-200 text-slate-700'
                   }`}>
                     {injections.length}
                   </span>
                 </button>
+
+                {/* Day Comparison Tab */}
+                {reconciliationReport && (
+                  <button
+                    id="tab-reconciliation"
+                    onClick={() => setIsReconciliationModalOpen(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 cursor-pointer"
+                  >
+                    <GitCompare className="w-4 h-4 text-teal-700" />
+                    <span>ĐỐI CHIẾU VỚI HÔM TRƯỚC</span>
+                    {reconciliationReport.newOrdersCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-600 text-white font-bold">
+                        +{reconciliationReport.newOrdersCount} mới
+                      </span>
+                    )}
+                  </button>
+                )}
 
                 {/* Pending Checks Tab */}
                 <button
@@ -366,7 +330,7 @@ export default function App() {
                   }`}
                 >
                   <AlertTriangle className="w-4 h-4" />
-                  <span>CẦN KIỂM TRA</span>
+                  <span>CẦN BỔ SUNG ĐƯỜNG DÙNG</span>
                   {pendingChecks.length > 0 && (
                     <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
                       activeTab === 'PENDING_CHECKS' ? 'bg-amber-700 text-amber-100' : 'bg-amber-100 text-amber-800 font-bold'
@@ -396,7 +360,7 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Quick Actions in tab bar */}
+              {/* Quick Info in tab bar */}
               <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500">
                 <span>Khoa: <strong className="text-slate-800">{departmentName}</strong></span>
                 <span>•</span>
@@ -411,14 +375,17 @@ export default function App() {
                 onToggleExecution={handleToggleExecution}
                 onBatchToggleExecution={handleBatchToggleExecution}
                 onOpenDuplicateModal={() => setIsDuplicateModalOpen(true)}
+                onUpdateRecord={handleUpdateRecord}
+                onOpenReconciliationModal={() => setIsReconciliationModalOpen(true)}
+                hasReconciliationData={!!reconciliationReport}
               />
             )}
 
             {activeTab === 'PENDING_CHECKS' && (
               <PendingCheckTable
                 pendingChecks={pendingChecks}
-                roomRecords={rawRoomRecords}
-                onManualMatch={(item) => setSelectedPendingForManualMatch(item)}
+                roomRecords={[]}
+                onManualMatch={() => {}}
                 onDismissPending={handleDismissPending}
               />
             )}
@@ -441,37 +408,37 @@ export default function App() {
               Chào mừng bạn đến với Sổ Thuốc Tiêm Điện Tử
             </h3>
             <p className="text-xs text-slate-500 max-w-2xl mx-auto mt-1.5 leading-relaxed">
-              Ứng dụng tự động đối chiếu mã bệnh nhân và họ tên giữa file xuất y lệnh HIS và danh sách phòng nội trú, tự động nhận diện thuốc tiêm, loại bỏ dịch truyền và vật tư y tế, giúp điều dưỡng tạo sổ thuốc tiêm chuẩn xác trong 3 giây.
+              Ứng dụng tự động xử lý file xuất thống kê truyền dịch / thuốc tiêm HIS, tự động tính tuổi (năm hiện tại - năm sinh, số tháng cho bé nhi), bóc tách Khu và Buồng, nhận diện thuốc mới & đổi liều so với ngày hôm trước và tạo sổ thuốc tiêm chuẩn 7 cột cho điều dưỡng.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto mt-8 text-left text-xs">
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
                 <div className="font-bold text-slate-800 mb-1 flex items-center gap-1.5">
                   <span className="w-5 h-5 rounded-full bg-teal-600 text-white text-[11px] font-bold flex items-center justify-center">1</span>
-                  Tải 2 file Excel
+                  Tải 1 file Thống kê truyền dịch
                 </div>
                 <p className="text-slate-500 text-[11px]">
-                  File 1 xuất từ phần mềm bệnh viện và File 2 danh sách bệnh nhân theo buồng phòng.
+                  Bao gồm tất cả danh sách thuốc. Tự động tính tuổi bệnh nhân và bóc tách Khu & Buồng từ cột Khoa Buồng - Giường.
                 </p>
               </div>
 
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
                 <div className="font-bold text-slate-800 mb-1 flex items-center gap-1.5">
                   <span className="w-5 h-5 rounded-full bg-teal-600 text-white text-[11px] font-bold flex items-center justify-center">2</span>
-                  Đối chiếu an toàn
+                  Đối chiếu ngày hôm trước
                 </div>
                 <p className="text-slate-500 text-[11px]">
-                  Ưu tiên mã người bệnh, chuẩn hóa tiếng Việt, phát hiện trùng tên và cảnh báo y lệnh trùng.
+                  Tự động so sánh hôm qua vs hôm nay, phát hiện thuốc mới (+), đổi liều (⟳) và thuốc ngưng (✕).
                 </p>
               </div>
 
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
                 <div className="font-bold text-slate-800 mb-1 flex items-center gap-1.5">
                   <span className="w-5 h-5 rounded-full bg-teal-600 text-white text-[11px] font-bold flex items-center justify-center">3</span>
-                  Xuất & In A4
+                  Xuất Excel 4 Sheet & In A4
                 </div>
                 <p className="text-slate-500 text-[11px]">
-                  Xuất file Excel 3 sheet hoàn chỉnh hoặc in trực tiếp theo phòng / ca trực.
+                  Xuất Excel chuẩn 7 cột kèm sheet đối chiếu hoặc in theo buồng/phòng/ca trực.
                 </p>
               </div>
             </div>
@@ -482,7 +449,7 @@ export default function App() {
                 className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold bg-teal-700 text-white hover:bg-teal-800 transition-all shadow-md active:scale-95 cursor-pointer"
               >
                 <Sparkles className="w-4 h-4 text-teal-200" />
-                Dùng thử ngay với Dữ liệu mẫu (1 Click Demo)
+                Dùng thử ngay với Dữ liệu mẫu 90 dòng BV Chợ Lách
               </button>
             </div>
           </div>
@@ -504,6 +471,13 @@ export default function App() {
         selectedDate={selectedDate}
       />
 
+      {/* Medication Reconciliation Modal (Day-to-day comparison) */}
+      <MedicationReconciliationModal
+        isOpen={isReconciliationModalOpen}
+        onClose={() => setIsReconciliationModalOpen(false)}
+        report={reconciliationReport}
+      />
+
       {/* Duplicate Warnings Inspector Modal */}
       <DuplicateWarningModal
         isOpen={isDuplicateModalOpen}
@@ -511,14 +485,6 @@ export default function App() {
         injections={injections}
         onRemoveRecord={handleRemoveDuplicateRecord}
         onKeepAll={handleKeepAllDuplicates}
-      />
-
-      {/* Manual Patient-Room Matching Modal */}
-      <ManualMatchModal
-        pendingItem={selectedPendingForManualMatch}
-        roomRecords={rawRoomRecords}
-        onClose={() => setSelectedPendingForManualMatch(null)}
-        onConfirmMatch={handleConfirmManualMatch}
       />
     </div>
   );

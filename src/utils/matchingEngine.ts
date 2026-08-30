@@ -1,5 +1,5 @@
 /**
- * Matching and Processing Engine for Sổ Thuốc Tiêm Điện Tử
+ * Matching, Processing & Medication Reconciliation Engine for SỔ THUỐC TIÊM ĐIỆN TỬ
  */
 import {
   RawDrugRecord,
@@ -8,16 +8,19 @@ import {
   PendingCheckRecord,
   ExcludedItemRecord,
   ProcessingReport,
+  DayComparisonReport,
+  PatientReconciliationSummary,
+  MedicationChangeStatus,
 } from '../types/hospital';
 import { classifyMedicationItem } from './drugClassifier';
-import { formatOrderDate, parseAgeAndDob } from './excelParser';
+import {
+  formatOrderDate,
+  calculatePatientAgeAndPediatric,
+  extractHospitalAreaAndRoom
+} from './excelParser';
 
 /**
  * Standardize Vietnamese Full Name for Safe Strict Matching
- * - Trims whitespaces
- * - Collapses multiple spaces into single space
- * - Lowercases with Unicode NFC normalization
- * - Preserves Vietnamese accents (DO NOT remove tones)
  */
 export function normalizeVietnameseName(name?: string): string {
   if (!name || typeof name !== 'string') return '';
@@ -40,11 +43,11 @@ export function normalizeCode(code: any): string {
  * Compare ages with safe parsing
  */
 function isAgeMatching(age1?: any, age2?: any): boolean {
-  if (!age1 || !age2) return true; // not conflicting
+  if (!age1 || !age2) return true;
   const num1 = parseInt(String(age1).replace(/\D/g, ''), 10);
   const num2 = parseInt(String(age2).replace(/\D/g, ''), 10);
   if (isNaN(num1) || isNaN(num2)) return true;
-  return Math.abs(num1 - num2) <= 1; // Allow 1-year variance for birth year calculation
+  return Math.abs(num1 - num2) <= 1;
 }
 
 /**
@@ -65,37 +68,100 @@ function isGenderMatching(g1?: string, g2?: string): boolean {
 }
 
 /**
- * Resolve Patient Age from drug record, room record, or DOB
+ * Resolve Patient Age & Pediatric formatting
+ * Tuổi = Năm hiện tại - Năm sinh (hoặc X tháng nếu bé nhi)
  */
-export function resolvePatientAge(drugRec: RawDrugRecord, matchedRoom?: RawRoomRecord | null): string {
-  // 1. Direct Age from Drug Record
-  if (drugRec.age !== undefined && drugRec.age !== null && String(drugRec.age).trim() !== '') {
-    return String(drugRec.age).trim();
+export function resolvePatientAge(
+  drugRec: RawDrugRecord,
+  matchedRoom?: RawRoomRecord | null
+): { age: string; isPediatric: boolean } {
+  // 1. If drug record already has parsed age
+  if (drugRec.age) {
+    const isP = String(drugRec.age).includes('tháng') || (drugRec.birthYear && new Date().getFullYear() - drugRec.birthYear < 16);
+    return { age: String(drugRec.age).trim(), isPediatric: !!isP };
   }
 
-  // 2. Direct Age from Room Record
-  if (matchedRoom?.age !== undefined && matchedRoom.age !== null && String(matchedRoom.age).trim() !== '') {
-    return String(matchedRoom.age).trim();
+  // 2. If room record has parsed age
+  if (matchedRoom?.age) {
+    const isP = String(matchedRoom.age).includes('tháng') || (matchedRoom.birthYear && new Date().getFullYear() - matchedRoom.birthYear < 16);
+    return { age: String(matchedRoom.age).trim(), isPediatric: !!isP };
   }
 
-  // 3. Calculate from DOB (Drug Record or Room Record)
-  const dobToUse = drugRec.dob || matchedRoom?.dob;
-  if (dobToUse) {
-    const { age } = parseAgeAndDob('', dobToUse);
-    if (age) return age;
-  }
+  // 3. Calculate from DOB/BirthYear
+  const rawDob = drugRec.dob || matchedRoom?.dob || drugRec.birthYear || matchedRoom?.birthYear;
+  const rawAge = drugRec.age || matchedRoom?.age;
+  const { age, isPediatric } = calculatePatientAgeAndPediatric(rawAge, rawDob);
 
-  return '';
+  return { age: age || 'Chưa rõ tuổi', isPediatric };
 }
 
 /**
- * Assemble Drug Full Name preserving original details
+ * Resolve Room Display: Khu nào & Buồng số mấy
+ */
+export function resolveRoomAndArea(
+  drugRec: RawDrugRecord,
+  matchedRoom?: RawRoomRecord | null
+): { roomDisplay: string; bed: string; area: string; roomNumber: string } {
+  // Priority 1: From drug record's "Khoa Buồng - Giường" column
+  if (drugRec.departmentRoomBed) {
+    const extracted = extractHospitalAreaAndRoom(drugRec.departmentRoomBed);
+    if (extracted.roomDisplay && extracted.roomDisplay !== 'Chưa xếp phòng') {
+      return {
+        roomDisplay: extracted.roomDisplay,
+        bed: extracted.bed || '—',
+        area: extracted.area,
+        roomNumber: extracted.roomNumber,
+      };
+    }
+  }
+
+  // Priority 2: From matched Room Record
+  if (matchedRoom) {
+    if (matchedRoom.departmentRoomBed) {
+      const extracted = extractHospitalAreaAndRoom(matchedRoom.departmentRoomBed);
+      if (extracted.roomDisplay && extracted.roomDisplay !== 'Chưa xếp phòng') {
+        return {
+          roomDisplay: extracted.roomDisplay,
+          bed: matchedRoom.bed || extracted.bed || '—',
+          area: extracted.area,
+          roomNumber: extracted.roomNumber,
+        };
+      }
+    }
+    const extractedRoom = extractHospitalAreaAndRoom(matchedRoom.room);
+    return {
+      roomDisplay: extractedRoom.roomDisplay || matchedRoom.room || 'Chưa xếp phòng',
+      bed: matchedRoom.bed || '—',
+      area: extractedRoom.area,
+      roomNumber: extractedRoom.roomNumber,
+    };
+  }
+
+  // Priority 3: Drug record raw room/area fields
+  if (drugRec.area && drugRec.roomNumber) {
+    return {
+      roomDisplay: `${drugRec.area} - ${drugRec.roomNumber}`,
+      bed: '—',
+      area: drugRec.area,
+      roomNumber: drugRec.roomNumber,
+    };
+  }
+
+  return {
+    roomDisplay: 'Chưa xếp phòng',
+    bed: '—',
+    area: '',
+    roomNumber: '',
+  };
+}
+
+/**
+ * Assemble Drug Full Name preserving complete details
  */
 export function buildDrugFullName(raw: RawDrugRecord): string {
   const name = (raw.drugName || '').trim();
   const strength = raw.strength ? raw.strength.trim() : '';
 
-  // If strength is already in the drug name, avoid repeating
   if (strength && !name.toLowerCase().includes(strength.toLowerCase())) {
     return `${name} ${strength}`;
   }
@@ -104,21 +170,28 @@ export function buildDrugFullName(raw: RawDrugRecord): string {
 
 /**
  * Main Process & Match Function
- * Fully includes all records from order statistics (thống kê truyền dịch / thuốc tiêm),
- * gracefully preserving records with missing routes so users can manually supplement them.
+ * Fully aligns with user request:
+ * 1. Tên bệnh nhân
+ * 2. Tuổi (Năm hiện tại - Năm sinh / X tháng)
+ * 3. Phòng (Khu & Buồng)
+ * 4. Tên thuốc & hàm lượng đầy đủ
+ * 5. Ghi chú (đường dùng / dặn dò)
+ * 6. Thời gian y lệnh (cột cuối cùng)
  */
 export function processAndMatchHospitalData(params: {
   drugRecords: RawDrugRecord[];
-  roomRecords: RawRoomRecord[];
+  roomRecords?: RawRoomRecord[];
   selectedDate?: string;
-  includeAllOrders?: boolean;
+  previousDayRecords?: ProcessedInjectionRecord[];
+  previousDayDrugRecords?: RawDrugRecord[];
 }): {
   injections: ProcessedInjectionRecord[];
   pendingChecks: PendingCheckRecord[];
   excludedItems: ExcludedItemRecord[];
   report: ProcessingReport;
+  reconciliationReport?: DayComparisonReport;
 } {
-  const { drugRecords, roomRecords, selectedDate, includeAllOrders = true } = params;
+  const { drugRecords, roomRecords = [], selectedDate, previousDayRecords, previousDayDrugRecords } = params;
 
   // Extract all distinct dates
   const datesSet = new Set<string>();
@@ -132,13 +205,12 @@ export function processAndMatchHospitalData(params: {
     ? drugRecords.filter(r => r.orderDate === selectedDate || !r.orderDate)
     : drugRecords;
 
-  // Build Lookups from Room Records
+  // Build Lookups from Room Records if available
   const codeToRoomsMap = new Map<string, RawRoomRecord[]>();
   const medicalRecordToRoomsMap = new Map<string, RawRoomRecord[]>();
   const nameToRoomsMap = new Map<string, RawRoomRecord[]>();
 
   roomRecords.forEach(roomRec => {
-    // By Patient Code
     const pCode = normalizeCode(roomRec.patientCode);
     if (pCode) {
       const list = codeToRoomsMap.get(pCode) || [];
@@ -146,7 +218,6 @@ export function processAndMatchHospitalData(params: {
       codeToRoomsMap.set(pCode, list);
     }
 
-    // By Medical Record Code
     const mCode = normalizeCode(roomRec.medicalRecordCode);
     if (mCode) {
       const list = medicalRecordToRoomsMap.get(mCode) || [];
@@ -154,7 +225,6 @@ export function processAndMatchHospitalData(params: {
       medicalRecordToRoomsMap.set(mCode, list);
     }
 
-    // By Normalized Name
     const normName = normalizeVietnameseName(roomRec.patientName);
     if (normName) {
       const list = nameToRoomsMap.get(normName) || [];
@@ -190,7 +260,7 @@ export function processAndMatchHospitalData(params: {
       dosageForm: drugRec.dosageForm,
     });
 
-    // Medical supplies (pure materials like gloves, syringes, cotton) -> Exclude to keep medication list clean
+    // Medical supplies (pure materials like gloves, syringes, cotton) -> Exclude
     if (classificationResult.classification === 'MEDICAL_SUPPLY') {
       totalExcludedSupplies++;
       excludedItems.push({
@@ -208,85 +278,51 @@ export function processAndMatchHospitalData(params: {
       return;
     }
 
-    // Match with Room List (Priority 1: Code, Priority 2: Medical Record Code, Priority 3: Full Name)
+    // Match with Room List if provided
     let matchedRoom: RawRoomRecord | null = null;
     let matchType: 'CODE' | 'NAME_STRICT' | 'MANUAL' = 'CODE';
 
-    // Try Patient Code
     if (pCode && codeToRoomsMap.has(pCode)) {
       const candidates = codeToRoomsMap.get(pCode)!;
-      if (candidates.length === 1) {
-        matchedRoom = candidates[0];
-        matchType = 'CODE';
-      } else {
-        const exactNameCandidate = candidates.find(c => normalizeVietnameseName(c.patientName) === normPatientName);
-        if (exactNameCandidate) {
-          matchedRoom = exactNameCandidate;
-          matchType = 'CODE';
-        }
-      }
-    }
-
-    // Try Medical Record Code
-    if (!matchedRoom && mCode && medicalRecordToRoomsMap.has(mCode)) {
+      matchedRoom = candidates[0];
+      matchType = 'CODE';
+    } else if (mCode && medicalRecordToRoomsMap.has(mCode)) {
       const candidates = medicalRecordToRoomsMap.get(mCode)!;
-      if (candidates.length === 1) {
-        matchedRoom = candidates[0];
-        matchType = 'CODE';
-      }
-    }
-
-    // Try Strict Name Match
-    if (!matchedRoom && normPatientName && nameToRoomsMap.has(normPatientName)) {
+      matchedRoom = candidates[0];
+      matchType = 'CODE';
+    } else if (normPatientName && nameToRoomsMap.has(normPatientName)) {
       const candidates = nameToRoomsMap.get(normPatientName)!;
-      if (candidates.length === 1) {
-        matchedRoom = candidates[0];
-        matchType = 'NAME_STRICT';
-      } else {
-        // Disambiguate by DOB / Age / Gender
-        const filtered = candidates.filter(cand => {
-          const ageOk = isAgeMatching(drugRec.age, cand.age);
-          const genderOk = isGenderMatching(drugRec.gender, cand.gender);
-          const dobOk = !drugRec.dob || !cand.dob || drugRec.dob === cand.dob;
-          return ageOk && genderOk && dobOk;
-        });
-
-        if (filtered.length === 1) {
-          matchedRoom = filtered[0];
-          matchType = 'NAME_STRICT';
-        } else {
-          matchedRoom = candidates[0]; // fallback candidate
-          matchType = 'MANUAL';
-        }
-      }
+      matchedRoom = candidates[0];
+      matchType = 'NAME_STRICT';
     }
 
-    if (matchedRoom) {
+    // Resolve Room Display: Khu nào - Buồng số mấy
+    const roomInfo = resolveRoomAndArea(drugRec, matchedRoom);
+    if (roomInfo.roomDisplay && roomInfo.roomDisplay !== 'Chưa xếp phòng') {
       matchedPatientsSet.add(rawPatientName);
     } else {
       unmatchedPatientsSet.add(rawPatientName);
     }
 
-    // Calculate final fields
-    const patientCodeFinal = drugRec.patientCode || matchedRoom?.patientCode || 'Chưa có mã';
-    const ageFinal = resolvePatientAge(drugRec, matchedRoom);
+    // Resolve Age & Pediatric formatting (Năm hiện tại - Năm sinh / X tháng)
+    const { age: ageFinal, isPediatric } = resolvePatientAge(drugRec, matchedRoom);
+
+    const patientCodeFinal = drugRec.patientCode || matchedRoom?.patientCode || '';
     const genderFinal = drugRec.gender || matchedRoom?.gender || '';
-    const roomFinal = matchedRoom?.room || 'Chưa xếp phòng';
-    const bedFinal = matchedRoom?.bed || '—';
     const drugFullName = buildDrugFullName(drugRec);
     const orderTimeFinal = drugRec.orderTime || '08:00';
     const routeFinal = drugRec.route ? drugRec.route.trim() : (classificationResult.classification === 'INFUSION' ? 'Truyền TM' : '');
 
-    // Add note if route is missing
-    let recordNote = '';
-    if (!drugRec.route) {
-      recordNote = 'Chưa có đường dùng (cần bổ sung)';
-    }
-    if (!matchedRoom) {
-      recordNote = recordNote ? `${recordNote} • Chưa tìm thấy phòng` : 'Chưa tìm thấy phòng';
+    // Format Notes
+    let notesFinal = drugRec.notes || '';
+    if (!notesFinal) {
+      if (routeFinal) {
+        notesFinal = `Đường dùng: ${routeFinal}`;
+      } else {
+        notesFinal = 'Cần bổ sung đường dùng';
+      }
     }
 
-    // Push into Primary Valid Injections list
     validInjections.push({
       id: `inj-${idx}-${Date.now()}`,
       stt: validInjections.length + 1,
@@ -294,26 +330,35 @@ export function processAndMatchHospitalData(params: {
       medicalRecordCode: drugRec.medicalRecordCode || matchedRoom?.medicalRecordCode,
       patientName: rawPatientName,
       age: ageFinal,
+      isPediatric,
       gender: genderFinal,
       dob: drugRec.dob || matchedRoom?.dob,
-      room: roomFinal,
-      bed: bedFinal,
+      birthYear: drugRec.birthYear || matchedRoom?.birthYear,
+      patientAddress: drugRec.patientAddress,
+      treatmentSheet: drugRec.treatmentSheet,
+      categoryType: drugRec.categoryType,
+      doctor: drugRec.doctor,
+      room: roomInfo.roomDisplay,
+      area: roomInfo.area,
+      roomNumber: roomInfo.roomNumber,
+      bed: roomInfo.bed,
       drugFullName,
       originalDrugName: drugRec.drugName,
       strength: drugRec.strength || '',
       unit: drugRec.unit || 'Ống',
       quantity: drugRec.quantity !== undefined ? drugRec.quantity : 1,
       route: routeFinal,
+      notes: notesFinal,
       orderTime: orderTimeFinal,
       orderDate: drugRec.orderDate || formatOrderDate(new Date()),
       activeIngredient: drugRec.activeIngredient,
       matchType,
       isExecuted: false,
-      notes: recordNote,
+      changeStatus: 'NONE',
     });
   });
 
-  // Duplicate Check (Cảnh báo trùng dữ liệu)
+  // Duplicate Check
   const dupMap = new Map<string, number[]>();
   validInjections.forEach((item, index) => {
     const key = `${normalizeVietnameseName(item.patientName)}|${item.drugFullName.toLowerCase()}|${item.orderTime}|${item.orderDate}`;
@@ -341,6 +386,29 @@ export function processAndMatchHospitalData(params: {
     item.stt = idx + 1;
   });
 
+  // Day Reconciliation / Previous Day Comparison if requested
+  let reconciliationReport: DayComparisonReport | undefined = undefined;
+  
+  let compPreviousList: ProcessedInjectionRecord[] = previousDayRecords || [];
+  if ((!compPreviousList || compPreviousList.length === 0) && previousDayDrugRecords && previousDayDrugRecords.length > 0) {
+    const prevProcessed = processAndMatchHospitalData({
+      drugRecords: previousDayDrugRecords,
+      roomRecords,
+    });
+    compPreviousList = prevProcessed.injections;
+  }
+
+  if (compPreviousList && compPreviousList.length > 0) {
+    const todayDateStr = selectedDate || availableDates[0] || 'Hôm nay';
+    const yesterdayDateStr = compPreviousList[0]?.orderDate || 'Hôm trước';
+    reconciliationReport = compareTwoDaysMedication(
+      validInjections,
+      compPreviousList,
+      todayDateStr,
+      yesterdayDateStr
+    );
+  }
+
   const report: ProcessingReport = {
     totalDrugRows: targetDrugRecords.length,
     totalRoomRows: roomRecords.length,
@@ -355,7 +423,10 @@ export function processAndMatchHospitalData(params: {
     totalPendingChecks: pendingChecks.length,
     duplicateWarningCount,
     availableDates,
-    departmentName: roomRecords.find(r => r.department)?.department || 'Khoa Nội Tổng Hợp',
+    departmentName:
+      targetDrugRecords.map(r => extractHospitalAreaAndRoom(r.departmentRoomBed).department).find(Boolean) ||
+      roomRecords.find(r => r.department)?.department ||
+      'KHOA NỘI TỔNG HỢP - NHI - TRUYỀN NHIỄM',
   };
 
   return {
@@ -363,6 +434,7 @@ export function processAndMatchHospitalData(params: {
     pendingChecks,
     excludedItems,
     report,
+    reconciliationReport,
   };
 }
 
@@ -374,19 +446,12 @@ export type SortMode = 'ROOM_PATIENT_TIME' | 'TIME' | 'PATIENT_NAME' | 'BED';
 export function sortInjectionRecords(records: ProcessedInjectionRecord[], sortMode: SortMode): void {
   records.sort((a, b) => {
     if (sortMode === 'ROOM_PATIENT_TIME') {
-      // 1. Room
       const roomComp = a.room.localeCompare(b.room, 'vi', { numeric: true });
       if (roomComp !== 0) return roomComp;
 
-      // 2. Bed
-      const bedComp = (a.bed || '').localeCompare(b.bed || '', 'vi', { numeric: true });
-      if (bedComp !== 0) return bedComp;
-
-      // 3. Patient Name
       const nameComp = a.patientName.localeCompare(b.patientName, 'vi');
       if (nameComp !== 0) return nameComp;
 
-      // 4. Order Time
       return (a.orderTime || '').localeCompare(b.orderTime || '');
     }
 
@@ -416,3 +481,152 @@ export function sortInjectionRecords(records: ProcessedInjectionRecord[], sortMo
   });
 }
 
+/**
+ * Compare Two Days Medication Data (So sánh đối chiếu với ngày hôm trước)
+ * Identifies:
+ * - NEW: Newly prescribed today
+ * - DISCONTINUED: Prescribed yesterday but stopped today
+ * - CHANGED_DOSE / CHANGED_TIME: Dose or timing altered
+ * - UNCHANGED: Maintained exactly
+ */
+export function compareTwoDaysMedication(
+  todayInjections: ProcessedInjectionRecord[],
+  yesterdayInjections: ProcessedInjectionRecord[],
+  currentDate: string,
+  previousDate: string
+): DayComparisonReport {
+  let newOrdersCount = 0;
+  let discontinuedOrdersCount = 0;
+  let changedOrdersCount = 0;
+  let unchangedOrdersCount = 0;
+
+  // Build Map of Yesterday Records: Key = "PatientNormName | DrugNormName"
+  const yesterdayMap = new Map<string, ProcessedInjectionRecord[]>();
+  yesterdayInjections.forEach(yItem => {
+    const key = `${normalizeVietnameseName(yItem.patientName)}|${normalizeVietnameseName(yItem.originalDrugName || yItem.drugFullName)}`;
+    const list = yesterdayMap.get(key) || [];
+    list.push(yItem);
+    yesterdayMap.set(key, list);
+  });
+
+  const matchedYesterdayIds = new Set<string>();
+
+  // Evaluate Today Records against Yesterday
+  todayInjections.forEach(todayItem => {
+    const key = `${normalizeVietnameseName(todayItem.patientName)}|${normalizeVietnameseName(todayItem.originalDrugName || todayItem.drugFullName)}`;
+    const yesterdayCandidates = yesterdayMap.get(key);
+
+    if (!yesterdayCandidates || yesterdayCandidates.length === 0) {
+      // New Medication Order!
+      todayItem.changeStatus = 'NEW';
+      newOrdersCount++;
+    } else {
+      // Candidate exists -> find best matching item
+      const exactMatch = yesterdayCandidates.find(y =>
+        String(y.quantity) === String(todayItem.quantity) &&
+        y.orderTime === todayItem.orderTime
+      );
+
+      if (exactMatch) {
+        todayItem.changeStatus = 'UNCHANGED';
+        todayItem.previousDayDetails = {
+          orderDate: exactMatch.orderDate,
+          quantity: exactMatch.quantity,
+          orderTime: exactMatch.orderTime,
+          route: exactMatch.route,
+          notes: exactMatch.notes,
+        };
+        matchedYesterdayIds.add(exactMatch.id);
+        unchangedOrdersCount++;
+      } else {
+        // Dosage or Time Changed
+        const sameQtyDiffTime = yesterdayCandidates.find(y => String(y.quantity) === String(todayItem.quantity));
+        const matchedItem = sameQtyDiffTime || yesterdayCandidates[0];
+
+        if (String(matchedItem.quantity) !== String(todayItem.quantity)) {
+          todayItem.changeStatus = 'CHANGED_DOSE';
+        } else {
+          todayItem.changeStatus = 'CHANGED_TIME';
+        }
+
+        todayItem.previousDayDetails = {
+          orderDate: matchedItem.orderDate,
+          quantity: matchedItem.quantity,
+          orderTime: matchedItem.orderTime,
+          route: matchedItem.route,
+          notes: matchedItem.notes,
+        };
+        matchedYesterdayIds.add(matchedItem.id);
+        changedOrdersCount++;
+      }
+    }
+  });
+
+  // Find Discontinued Orders (Present yesterday but absent today)
+  const discontinuedList: ProcessedInjectionRecord[] = [];
+  yesterdayInjections.forEach(yItem => {
+    if (!matchedYesterdayIds.has(yItem.id)) {
+      // Check if patient is still in today list
+      const patientInToday = todayInjections.find(t => normalizeVietnameseName(t.patientName) === normalizeVietnameseName(yItem.patientName));
+      if (patientInToday) {
+        discontinuedList.push({
+          ...yItem,
+          changeStatus: 'DISCONTINUED',
+        });
+        discontinuedOrdersCount++;
+      }
+    }
+  });
+
+  // Group by Patient for Summary
+  const patientSummaryMap = new Map<string, PatientReconciliationSummary>();
+
+  todayInjections.forEach(item => {
+    const pName = item.patientName;
+    if (!patientSummaryMap.has(pName)) {
+      patientSummaryMap.set(pName, {
+        patientName: pName,
+        patientCode: item.patientCode,
+        room: item.room,
+        newOrders: [],
+        discontinuedOrders: [],
+        modifiedOrders: [],
+        unchangedOrders: [],
+      });
+    }
+    const summary = patientSummaryMap.get(pName)!;
+    if (item.changeStatus === 'NEW') summary.newOrders.push(item);
+    else if (item.changeStatus === 'CHANGED_DOSE' || item.changeStatus === 'CHANGED_TIME') summary.modifiedOrders.push(item);
+    else if (item.changeStatus === 'UNCHANGED') summary.unchangedOrders.push(item);
+  });
+
+  discontinuedList.forEach(item => {
+    const pName = item.patientName;
+    if (patientSummaryMap.has(pName)) {
+      patientSummaryMap.get(pName)!.discontinuedOrders.push(item);
+    } else {
+      patientSummaryMap.set(pName, {
+        patientName: pName,
+        patientCode: item.patientCode,
+        room: item.room,
+        newOrders: [],
+        discontinuedOrders: [item],
+        modifiedOrders: [],
+        unchangedOrders: [],
+      });
+    }
+  });
+
+  return {
+    currentDate,
+    previousDate,
+    totalToday: todayInjections.length,
+    totalYesterday: yesterdayInjections.length,
+    newOrdersCount,
+    discontinuedOrdersCount,
+    changedOrdersCount,
+    unchangedOrdersCount,
+    patientSummaries: Array.from(patientSummaryMap.values()),
+    discontinuedList,
+  };
+}

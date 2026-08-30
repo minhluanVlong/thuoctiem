@@ -1,5 +1,5 @@
 /**
- * Types and interfaces for Sổ Thuốc Tiêm Điện Tử (Electronic Injection Drug Record)
+ * Types and interfaces for SỔ THUỐC TIÊM ĐIỆN TỬ (Electronic Injection Drug Record)
  */
 
 export interface RawDrugRecord {
@@ -9,16 +9,25 @@ export interface RawDrugRecord {
   patientName: string;        // Họ và tên người bệnh
   age?: number | string;      // Tuổi
   dob?: string;               // Ngày sinh / Năm sinh
+  birthYear?: number;         // Năm sinh
   gender?: string;            // Giới tính (Nam/Nữ)
+  patientAddress?: string;    // Địa chỉ bệnh nhân
+  departmentRoomBed?: string; // Cột "Khoa Buồng - Giường" hoặc "Khoa/Phòng/Giường"
+  area?: string;              // Khu (Khu A, Khu B, Khu Ngoại,...)
+  roomNumber?: string;        // Buồng số mấy
   drugName: string;           // Tên thuốc gốc
   activeIngredient?: string;  // Hoạt chất
   strength?: string;          // Hàm lượng / nồng độ
-  unit?: string;              // Đơn vị tính (ống, lọ,...)
+  unit?: string;              // Đơn vị tính (ống, lọ, chai,...)
   quantity?: number | string; // Số lượng
   route?: string;             // Đường dùng (IV, IM, SC, Tiêm bắp,...)
+  notes?: string;             // Ghi chú / Dặn dò y lệnh
   orderTime?: string;         // Giờ y lệnh (07:00, 19:30)
   orderDate?: string;         // Ngày y lệnh (YYYY-MM-DD hoặc DD/MM/YYYY)
   dosageForm?: string;        // Dạng bào chế
+  treatmentSheet?: string | number; // Tờ điều trị
+  categoryType?: string;      // Loại (Thuốc tiêm, Insulin,...)
+  doctor?: string;            // Bác sĩ chỉ định
   rawRowData?: Record<string, any>;
   rowIndex: number;
 }
@@ -29,8 +38,11 @@ export interface RawRoomRecord {
   linkCode?: string;          // Mã liên kết
   patientName: string;        // Họ tên bệnh nhân
   age?: number | string;      // Tuổi
-  dob?: string;               // Ngày sinh
+  dob?: string;               // Ngày sinh / Năm sinh
+  birthYear?: number;
   gender?: string;            // Giới tính
+  departmentRoomBed?: string; // Cột "Khoa Buồng - Giường"
+  area?: string;              // Khu
   room: string;               // Phòng / Buồng
   bed: string;                // Giường
   department?: string;        // Khoa
@@ -40,32 +52,52 @@ export interface RawRoomRecord {
 
 export type ItemClassification = 'INJECTION' | 'INFUSION' | 'MEDICAL_SUPPLY' | 'ORAL_OR_OTHER' | 'UNCERTAIN';
 
+export type MedicationChangeStatus = 'NEW' | 'CHANGED_DOSE' | 'CHANGED_TIME' | 'UNCHANGED' | 'DISCONTINUED' | 'NONE';
+
 export interface ProcessedInjectionRecord {
   id: string;
   stt: number;
   patientCode: string;
   medicalRecordCode?: string;
-  patientName: string;
-  age: string;
+  patientName: string;        // 1. Tên bệnh nhân
+  age: string;                // 2. Tuổi (năm hiện tại - năm sinh, hoặc X tháng nếu là nhi)
+  isPediatric?: boolean;      // Đánh dấu bệnh nhân nhi
   gender: string;
   dob?: string;
-  room: string;
-  bed: string;
-  drugFullName: string;       // Tên thuốc gốc kèm hàm lượng đầy đủ
+  birthYear?: number;
+  room: string;               // 3. Phòng (Khu nào - Buồng số mấy)
+  area?: string;              // Khu
+  roomNumber?: string;        // Buồng
+  bed: string;                // Giường
+  drugFullName: string;       // 4. Tên thuốc & Hàm lượng đầy đủ
   originalDrugName: string;
   strength: string;
   unit: string;
   quantity: string | number;
-  route: string;
-  orderTime: string;          // Chuẩn hóa định dạng HH:mm
+  route: string;              // Đường dùng
+  notes?: string;             // 5. Ghi chú (đường dùng, dặn dò, lưu ý)
+  orderTime: string;          // 6. Thời gian y lệnh (cột cuối cùng)
   orderDate: string;
+  treatmentSheet?: string | number; // Tờ điều trị
+  categoryType?: string;      // Loại (Thuốc tiêm, Insulin,...)
+  doctor?: string;            // Bác sĩ chỉ định
+  patientAddress?: string;    // Địa chỉ
   activeIngredient?: string;
   matchType: 'CODE' | 'NAME_STRICT' | 'MANUAL';
   isDuplicate?: boolean;
   duplicateGroupKey?: string;
   isExecuted?: boolean;       // Trạng thái điều dưỡng đã tiêm / chưa tiêm
   executedBy?: string;
-  notes?: string;
+
+  // Day Reconciliation / Comparison fields
+  changeStatus?: MedicationChangeStatus;
+  previousDayDetails?: {
+    orderDate?: string;
+    quantity?: string | number;
+    orderTime?: string;
+    route?: string;
+    notes?: string;
+  };
 }
 
 export interface PendingCheckRecord {
@@ -76,9 +108,11 @@ export interface PendingCheckRecord {
   patientName: string;
   age?: string;
   gender?: string;
+  room?: string;
   drugName: string;
   strength?: string;
   route?: string;
+  notes?: string;
   orderTime?: string;
   orderDate?: string;
   reason: string;
@@ -98,6 +132,29 @@ export interface ExcludedItemRecord {
   unit?: string;
   orderTime?: string;
   reason: string;
+}
+
+export interface PatientReconciliationSummary {
+  patientName: string;
+  patientCode?: string;
+  room: string;
+  newOrders: ProcessedInjectionRecord[];
+  discontinuedOrders: ProcessedInjectionRecord[];
+  modifiedOrders: ProcessedInjectionRecord[];
+  unchangedOrders: ProcessedInjectionRecord[];
+}
+
+export interface DayComparisonReport {
+  currentDate: string;
+  previousDate: string;
+  totalToday: number;
+  totalYesterday: number;
+  newOrdersCount: number;
+  discontinuedOrdersCount: number;
+  changedOrdersCount: number;
+  unchangedOrdersCount: number;
+  patientSummaries: PatientReconciliationSummary[];
+  discontinuedList: ProcessedInjectionRecord[];
 }
 
 export interface ProcessingReport {

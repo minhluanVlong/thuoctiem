@@ -245,21 +245,19 @@ export const PrintModal: React.FC<PrintModalProps> = ({
               </p>
             </div>
 
-            {/* Printable Table */}
+            {/* Printable Table: 7 exact user columns */}
             <div className="overflow-hidden border border-slate-900 mt-4">
               <table className="w-full text-left text-xs border-collapse border border-slate-900 font-sans">
                 <thead>
                   <tr className="bg-slate-100 text-slate-900 font-bold uppercase text-[11px] border-b border-slate-900">
                     <th className="py-2 px-2 text-center border-r border-slate-900 w-10">STT</th>
-                    <th className="py-2 px-3 border-r border-slate-900">Họ và Tên Bệnh Nhân</th>
-                    <th className="py-2 px-2 text-center border-r border-slate-900 w-12">Tuổi</th>
-                    <th className="py-2 px-2 text-center border-r border-slate-900 w-16">Phòng</th>
-                    <th className="py-2 px-2 text-center border-r border-slate-900 w-16">Giường</th>
-                    <th className="py-2 px-3 border-r border-slate-900">Thuốc Tiêm & Hàm Lượng</th>
-                    <th className="py-2 px-2 text-center border-r border-slate-900 w-16">Đường Dùng</th>
-                    <th className="py-2 px-2 text-center border-r border-slate-900 w-20">Giờ Y Lệnh</th>
-                    <th className="py-2 px-3 text-center border-r border-slate-900 w-24">ĐD Ký Thực Hiện</th>
-                    <th className="py-2 px-2 text-center w-20">Ghi Chú</th>
+                    <th className="py-2 px-3 border-r border-slate-900">Tên Người Bệnh</th>
+                    <th className="py-2 px-2 text-center border-r border-slate-900 w-14">Tuổi</th>
+                    <th className="py-2 px-2 text-center border-r border-slate-900 w-28">Phòng (Khu - Buồng)</th>
+                    <th className="py-2 px-3 border-r border-slate-900">Tên Thuốc & Hàm Lượng</th>
+                    <th className="py-2 px-3 border-r border-slate-900">Ghi Chú (Đường dùng / Dặn dò)</th>
+                    <th className="py-2 px-2 text-center border-r border-slate-900 w-20">Thời Gian Y Lệnh</th>
+                    <th className="py-2 px-2 text-center w-20">ĐD Ký Thực Hiện</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-400">
@@ -269,22 +267,28 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                       <td className="py-2 px-3 border-r border-slate-400 font-bold text-slate-900">
                         {item.patientName}
                       </td>
-                      <td className="py-2 px-2 text-center border-r border-slate-400">{item.age || '—'}</td>
-                      <td className="py-2 px-2 text-center border-r border-slate-400 font-bold">{item.room}</td>
-                      <td className="py-2 px-2 text-center border-r border-slate-400">{item.bed || '—'}</td>
+                      <td className="py-2 px-2 text-center border-r border-slate-400 font-medium">
+                        {item.age || '—'}
+                      </td>
+                      <td className="py-2 px-2 text-center border-r border-slate-400 font-bold text-slate-800">
+                        {item.room}
+                      </td>
                       <td className="py-2 px-3 border-r border-slate-400 font-medium">
                         {item.drugFullName}
-                        {item.quantity && <span className="text-slate-600 text-[10px] ml-1 font-normal">({item.quantity} {item.unit})</span>}
+                        {item.quantity && (
+                          <span className="text-slate-700 text-[10px] ml-1 font-semibold">
+                            ({item.quantity} {item.unit})
+                          </span>
+                        )}
                       </td>
-                      <td className="py-2 px-2 text-center border-r border-slate-400 font-semibold">{item.route}</td>
+                      <td className="py-2 px-3 border-r border-slate-400 text-slate-700 text-[11px]">
+                        {item.notes || (item.route ? `Đường dùng: ${item.route}` : '—')}
+                      </td>
                       <td className="py-2 px-2 text-center border-r border-slate-400 font-mono font-bold text-slate-900">
                         {item.orderTime}
                       </td>
-                      <td className="py-2 px-3 text-center border-r border-slate-400 text-slate-400 text-[10px]">
-                        {item.isExecuted ? '✓ Đã thực hiện' : ''}
-                      </td>
-                      <td className="py-2 px-2 text-center text-slate-500 text-[10px]">
-                        {item.notes || ''}
+                      <td className="py-2 px-2 text-center text-slate-400 text-[10px]">
+                        {item.isExecuted ? '✓ Đã tiêm' : ''}
                       </td>
                     </tr>
                   ))}

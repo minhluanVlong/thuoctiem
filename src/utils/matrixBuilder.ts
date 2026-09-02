@@ -443,7 +443,8 @@ export function formatDoseAndTimeSchedule(record: ProcessedInjectionRecord): {
     ) {
       frequency = 3;
     } else if (
-      // STANDARD 2 TIMES/DAY (Khi qty >= 2 hoặc có chỉ định cách 12 giờ / sáng - chiều)
+      // STANDARD 2 TIMES/DAY (Khi qty >= 2 hoặc có chỉ định cách 12 giờ / sáng - chiều, hoặc thuốc PKD như Vinsalmol, Zensonid)
+      isVinsalmolOrPKD ||
       ((drugNameLower.includes('cefotaxim') ||
         drugNameLower.includes('cefotaxime') ||
         drugNameLower.includes('cefoperazon') ||
@@ -451,8 +452,7 @@ export function formatDoseAndTimeSchedule(record: ProcessedInjectionRecord): {
         drugNameLower.includes('sulperazon') ||
         drugNameLower.includes('sulperazone') ||
         drugNameLower.includes('ciprofloxacin') ||
-        drugNameLower.includes('levofloxacin') ||
-        isVinsalmolOrPKD) && qty >= 2) ||
+        drugNameLower.includes('levofloxacin')) && qty >= 2) ||
       qty === 2
     ) {
       frequency = 2;
@@ -582,6 +582,19 @@ export function normalizeDrugColumnHeader(drugFullName: string, route: string): 
   let routeLabel = (route || 'TMC').toUpperCase().trim();
   const nameLower = name.toLowerCase();
 
+  const isAerosolDrug =
+    nameLower.includes('vinsalmol') ||
+    nameLower.includes('salbutamol') ||
+    nameLower.includes('zensonid') ||
+    nameLower.includes('budesonid') ||
+    nameLower.includes('pulmicort') ||
+    nameLower.includes('berodual') ||
+    nameLower.includes('combivent') ||
+    nameLower.includes('ventolin') ||
+    routeLabel.includes('KHÍ DUNG') ||
+    routeLabel.includes('PKD') ||
+    nameLower.includes('khí dung');
+
   const isInsulinDrug =
     nameLower.includes('insulin') ||
     nameLower.includes('humalog') ||
@@ -599,7 +612,7 @@ export function normalizeDrugColumnHeader(drugFullName: string, route: string): 
     nameLower.includes('ryzodeg');
 
   // Standardize common route names to short forms like in nurse notebook
-  if (routeLabel.includes('KHÍ DUNG') || routeLabel.includes('PKD') || nameLower.includes('khí dung')) {
+  if (isAerosolDrug) {
     routeLabel = 'PKD';
   } else if (routeLabel.includes('TĨNH MẠCH') || routeLabel.includes('TM') || routeLabel.includes('TMC') || routeLabel.includes('IV')) {
     routeLabel = 'TMC';
@@ -607,6 +620,8 @@ export function normalizeDrugColumnHeader(drugFullName: string, route: string): 
     routeLabel = 'IM';
   } else if (routeLabel.includes('DƯỚI DA') || routeLabel.includes('SC') || routeLabel.includes('TDD') || isInsulinDrug) {
     routeLabel = 'TDD';
+  } else {
+    routeLabel = 'TMC';
   }
 
   // Extract clean short name (e.g. "Catachit 1g", "Ceftazidim 1g", "Cefotaxim 1g", "Hydrocortison 100mg", "Zentamil 0.5g", "Vinsalmol 5.0")

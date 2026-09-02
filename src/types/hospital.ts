@@ -69,6 +69,7 @@ export interface ProcessedInjectionRecord {
   area?: string;              // Khu
   roomNumber?: string;        // Buồng
   bed: string;                // Giường
+  departmentRoomBed?: string; // Khoa buồng giường gốc
   drugFullName: string;       // 4. Tên thuốc & Hàm lượng đầy đủ
   originalDrugName: string;
   strength: string;
@@ -88,6 +89,8 @@ export interface ProcessedInjectionRecord {
   duplicateGroupKey?: string;
   isExecuted?: boolean;       // Trạng thái điều dưỡng đã tiêm / chưa tiêm
   executedBy?: string;
+  timeSlots?: string[];       // Danh sách cữ giờ (e.g. ["7", "15", "23"])
+  timeSlotsExecuted?: boolean[]; // Trạng thái đã gạch chéo từng cữ [true, false, false]
 
   // Day Reconciliation / Comparison fields
   changeStatus?: MedicationChangeStatus;

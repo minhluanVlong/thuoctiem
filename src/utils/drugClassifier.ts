@@ -32,14 +32,15 @@ const MEDICAL_SUPPLY_KEYWORDS = [
   'khí oxy', 'bình oxy', 'vật tư', 'vtyt', 'dụng cụ'
 ];
 
-// Injection route keywords (Đường dùng thuốc tiêm)
+// Injection & Aerosol route keywords (Đường dùng thuốc tiêm và khí dung)
 const INJECTION_ROUTE_KEYWORDS = [
   'tiêm bắp', 'tiem bap', 'im', 'tiêm tm', 'tiem tm', 'tiêm tĩnh mạch', 'tiem tinh mach', 'iv',
   'tiêm dưới da', 'tiem duoi da', 'sc', 'tiêm trong da', 'tiem trong da', 'id',
   'iv push', 'iv bolus', 'iv drip', 'tiêm chậm', 'tiem cham', 'tiêm nhanh', 'tiem nhanh',
   'tiêm khớp', 'tiem khop', 'tiêm nội nhãn', 'tiem noi nhan', 'tiêm màng cứng', 'tiem mang cung',
   'tiêm tủy sống', 'tiem tuy song', 'tiêm xơ', 'tiem xo', 'tiêm', 'tiem', 'tiêm truyền tm',
-  'ttm', 'tb', 'tdd', 'ttd'
+  'ttm', 'tb', 'tdd', 'ttd', 'tmc', 'tiêm tmc', 'tiem tmc',
+  'phun khí dung', 'phun khi dung', 'khí dung', 'khi dung', 'pkd', 'khi dung mask'
 ];
 
 // Non-injection route keywords (Đường dùng KHÔNG PHẢI tiêm)
@@ -159,17 +160,18 @@ export function classifyMedicationItem(params: {
     }
   }
 
-  // 6. Check common injection drugs in Vietnamese hospitals if route is missing
+  // 6. Check common injection & aerosol drugs in Vietnamese hospitals if route is missing
   const commonInjDrugs = [
-    'ceftriaxone', 'ampicillin', 'amoxicillin/clavulanic', 'cefotaxime', 'ceftazidime',
-    'cefoperazone', 'meropenem', 'imipenem', 'vancomycin', 'gentamicin', 'amikacin',
-    'ciprofloxacin', 'levofloxacin', 'metronidazole', 'morphin', 'fentanyl', 'pethidin',
-    'enoxaparin', 'lovenox', 'heparin', 'insulin', 'actrapid', 'novorapid', 'lantus', 'mixtard',
-    'furosemide', 'lasix', 'methylprednisolon', 'solu-medrol', 'hydrocortison', 'dexamethason',
-    'ondansetron', 'metoclopramid', 'pantoprazol', 'esomeprazol', 'omeprazol',
-    'diazepam', 'midazolam', 'propofol', 'adrenalin', 'epinephrine', 'noradrenalin',
-    'dopamin', 'dobutamin', 'atropin', 'tranexamic acid', 'transamin', 'vitamin k1',
-    'calci clorid', 'calci gluconat', 'magnesi sulfat', 'paracetamol truyền', 'perfalgan'
+    'ceftriaxone', 'ceftriaxon', 'ampicillin', 'amoxicillin/clavulanic', 'cefotaxime', 'cefotaxim',
+    'ceftazidime', 'ceftazidim', 'catachit', 'cefoperazone', 'sulperazone', 'meropenem', 'imipenem',
+    'tienam', 'vancomycin', 'gentamicin', 'amikacin', 'ciprofloxacin', 'levofloxacin', 'metronidazole',
+    'morphin', 'fentanyl', 'pethidin', 'enoxaparin', 'lovenox', 'heparin', 'insulin', 'actrapid',
+    'novorapid', 'lantus', 'mixtard', 'furosemide', 'lasix', 'methylprednisolon', 'solu-medrol',
+    'hydrocortison', 'dexamethason', 'ondansetron', 'metoclopramid', 'pantoprazol', 'esomeprazol',
+    'omeprazol', 'diazepam', 'midazolam', 'propofol', 'adrenalin', 'epinephrine', 'noradrenalin',
+    'dopamin', 'dobutamin', 'atropin', 'tranexamic acid', 'transamin', 'vitamin k1', 'acetyl leucin',
+    'aleucin', 'calci clorid', 'calci gluconat', 'magnesi sulfat', 'paracetamol truyền', 'perfalgan',
+    'vinsalmol', 'zensonid', 'pulmicort', 'berodual', 'ventolin', 'salbutamol', 'combivent', 'budesonide'
   ];
 
   for (const drug of commonInjDrugs) {

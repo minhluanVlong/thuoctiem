@@ -1,13 +1,11 @@
 /**
  * Multi-sheet Excel Exporter for SỔ THUỐC TIÊM ĐIỆN TỬ
- * Formats columns strictly to nursing specifications:
- * 1. STT
- * 2. Tên người bệnh
- * 3. Tuổi (Năm hiện tại - Năm sinh / X tháng nếu bé nhi)
- * 4. Phòng (Khu nào - Buồng số mấy)
- * 5. Tên thuốc & Hàm lượng đầy đủ
- * 6. Ghi chú (Đường dùng / Dặn dò)
- * 7. Thời gian y lệnh (Cột cuối cùng)
+ * Includes:
+ * Sheet 1: SỔ TIÊM MA TRẬN (Mẫu Sổ Tay Điều Dưỡng - Bệnh nhân × Thuốc kèm liều & cữ giờ 7-15-23)
+ * Sheet 2: SỔ THUỐC TIÊM CHI TIẾT (7 Cột Chuẩn Y Khoa)
+ * Sheet 3: BẢNG ĐỐI SOÁT Y LỆNH HÔM TRƯỚC (Medication Reconciliation)
+ * Sheet 4: DANH SÁCH CẦN BỔ SUNG ĐƯỜNG DÙNG
+ * Sheet 5: DỊCH TRUYỀN & VẬT TƯ ĐÃ TÁCH
  */
 import * as XLSX from 'xlsx';
 import {
@@ -17,6 +15,7 @@ import {
   ProcessingReport,
   DayComparisonReport,
 } from '../types/hospital';
+import { buildNurseMatrixData } from './matrixBuilder';
 
 export function exportHospitalWorkbook(params: {
   injections: ProcessedInjectionRecord[];
@@ -39,11 +38,65 @@ export function exportHospitalWorkbook(params: {
 
   const workbook = XLSX.utils.book_new();
 
-  // ==========================================
-  // --- SHEET 1: SỔ THUỐC TIÊM CHUẨN Y KHOA ---
-  // ==========================================
-  const sheet1Data: any[][] = [
-    [`SỔ THUỐC TIÊM ĐIỆN TỬ HẰNG NGÀY - ${departmentName.toUpperCase()}`],
+  // =========================================================================
+  // --- SHEET 1: SỔ TIÊM MA TRẬN ĐIỀU DƯỠNG (MÔ PHỎNG SỔ TAY THỰC TẾ) ---
+  // =========================================================================
+  const matrixData = buildNurseMatrixData(injections);
+
+  const matrixSheetData: any[][] = [
+    [`SỔ THUỐC TIÊM & KHÍ DUNG (MA TRẬN ĐIỀU DƯỠNG) - ${departmentName.toUpperCase()}`],
+    [`Ngày y lệnh: ${selectedDate || '19/05/2026'} | Xuất lúc: ${new Date().toLocaleString('vi-VN')}`],
+    [],
+  ];
+
+  // Header Row 1: STT, Họ và tên, Tuổi, Phòng, [Tên các loại thuốc]
+  const matrixHeaderRow = [
+    'STT',
+    'Họ và tên người bệnh',
+    'Tuổi',
+    'Phòng',
+    ...matrixData.columns.map((c) => `${c.drugName} (${c.route})`),
+  ];
+  matrixSheetData.push(matrixHeaderRow);
+
+  // Data Rows
+  matrixData.rows.forEach((row, idx) => {
+    const rowValues = [
+      idx + 1,
+      row.patientName,
+      row.age,
+      row.room,
+      ...matrixData.columns.map((col) => {
+        const cell = row.cells[col.id];
+        if (!cell) return '';
+        // Format as: "1 x 3 [7-15-23]" + (notes ? " (+ Mới)" : "")
+        let text = `${cell.doseText}\n${cell.timeSchedule}`;
+        if (cell.notes) text += `\n(${cell.notes})`;
+        if (cell.isExecuted) text += ' [Đã tiêm]';
+        return text;
+      }),
+    ];
+    matrixSheetData.push(rowValues);
+  });
+
+  const wsMatrix = XLSX.utils.aoa_to_sheet(matrixSheetData);
+
+  // Column widths
+  wsMatrix['!cols'] = [
+    { wch: 6 },   // STT
+    { wch: 28 },  // Họ tên
+    { wch: 10 },  // Tuổi
+    { wch: 12 },  // Phòng
+    ...matrixData.columns.map(() => ({ wch: 22 })),
+  ];
+
+  XLSX.utils.book_append_sheet(workbook, wsMatrix, 'SỔ TIÊM MA TRẬN');
+
+  // =========================================================================
+  // --- SHEET 2: SỔ THUỐC TIÊM CHI TIẾT (CHUẨN 7 CỘT Y KHOA) ---
+  // =========================================================================
+  const sheetDetailData: any[][] = [
+    [`SỔ THUỐC TIÊM ĐIỆN TỬ CHI TIẾT - ${departmentName.toUpperCase()}`],
     [`Ngày thực hiện: ${selectedDate || 'Toàn bộ danh sách'} | Xuất lúc: ${new Date().toLocaleString('vi-VN')}`],
     [],
     [
@@ -60,7 +113,7 @@ export function exportHospitalWorkbook(params: {
   ];
 
   injections.forEach((item, idx) => {
-    sheet1Data.push([
+    sheetDetailData.push([
       idx + 1,
       item.patientName,
       item.age || '',
@@ -73,25 +126,23 @@ export function exportHospitalWorkbook(params: {
     ]);
   });
 
-  const ws1 = XLSX.utils.aoa_to_sheet(sheet1Data);
-
-  // Column widths for optimal printing & viewing
-  ws1['!cols'] = [
-    { wch: 6 },  // 1. STT
-    { wch: 28 }, // 2. Tên người bệnh
-    { wch: 12 }, // 3. Tuổi
-    { wch: 22 }, // 4. Phòng (Khu - Buồng)
-    { wch: 36 }, // 5. Tên thuốc & Hàm lượng
-    { wch: 16 }, // 6. Số lượng / ĐVT
-    { wch: 32 }, // 7. Ghi chú
-    { wch: 18 }, // 8. Thời gian y lệnh
-    { wch: 18 }, // 9. Trạng thái
+  const wsDetail = XLSX.utils.aoa_to_sheet(sheetDetailData);
+  wsDetail['!cols'] = [
+    { wch: 6 },
+    { wch: 28 },
+    { wch: 12 },
+    { wch: 22 },
+    { wch: 36 },
+    { wch: 16 },
+    { wch: 32 },
+    { wch: 18 },
+    { wch: 18 },
   ];
 
-  XLSX.utils.book_append_sheet(workbook, ws1, 'SỔ THUỐC TIÊM');
+  XLSX.utils.book_append_sheet(workbook, wsDetail, 'DANH SÁCH CHI TIẾT');
 
   // =======================================================
-  // --- SHEET 2: SO SÁNH ĐỐI CHIẾU VỚI NGÀY HÔM TRƯỚC ---
+  // --- SHEET 3: SO SÁNH ĐỐI CHIẾU VỚI NGÀY HÔM TRƯỚC ---
   // =======================================================
   if (reconciliationReport) {
     const sheetCompData: any[][] = [
@@ -160,93 +211,86 @@ export function exportHospitalWorkbook(params: {
     const wsComp = XLSX.utils.aoa_to_sheet(sheetCompData);
     wsComp['!cols'] = [
       { wch: 6 },
-      { wch: 26 },
+      { wch: 28 },
       { wch: 20 },
-      { wch: 32 },
+      { wch: 34 },
+      { wch: 26 },
       { wch: 24 },
-      { wch: 22 },
-      { wch: 22 },
-      { wch: 30 },
+      { wch: 24 },
+      { wch: 28 }
     ];
+
     XLSX.utils.book_append_sheet(workbook, wsComp, 'ĐỐI CHIẾU HÔM TRƯỚC');
   }
 
-  // ==========================================
-  // --- SHEET 3: BÁO CÁO THỐNG KÊ TỔNG HỢP ---
-  // ==========================================
-  const sheet3Data: any[][] = [
-    ['BÁO CÁO THỐNG KÊ VÀ ĐỐI SOÁT DỮ LIỆU SỔ THUỐC TIÊM'],
-    [`Khoa/Đơn vị: ${departmentName} | Ngày: ${selectedDate || 'Toàn bộ'}`],
-    [],
-    ['Chỉ số thống kê', 'Số lượng', 'Đơn vị tính', 'Ghi chú / Tỷ lệ'],
-    ['1. Tổng số dòng dữ liệu file thuốc gốc', report.totalDrugRows, 'Dòng', 'Dữ liệu xuất từ phần mềm HIS'],
-    ['2. Tổng số lượt thuốc tiêm hợp lệ đã vào sổ', report.totalValidInjections, 'Lượt tiêm', 'Đã phân bổ khu, buồng, giờ tiêm'],
-    ['3. Số bệnh nhân nội trú có chỉ định tiêm', report.patientsWithRoom, 'Bệnh nhân', 'Đã xác định khu/buồng'],
-    ['4. Số y lệnh dịch truyền đã phân loại', report.totalExcludedInfusions, 'Dòng', 'Dịch truyền NaCl, Glucose, Ringer...'],
-    ['5. Số y lệnh vật tư y tế đã lọc ra', report.totalExcludedSupplies, 'Dòng', 'Bơm tiêm, kim tiêm, dây truyền, găng...'],
-    ['6. Số cảnh báo khả năng trùng y lệnh tiêm', report.duplicateWarningCount, 'Lượt', 'Cùng người bệnh, thuốc, hàm lượng, giờ'],
-    [],
-    ['Điều dưỡng thực hiện', '', '', 'Điều dưỡng trưởng khoa']
-  ];
-
-  const ws3 = XLSX.utils.aoa_to_sheet(sheet3Data);
-  ws3['!cols'] = [
-    { wch: 45 },
-    { wch: 14 },
-    { wch: 16 },
-    { wch: 45 }
-  ];
-  XLSX.utils.book_append_sheet(workbook, ws3, 'THỐNG KÊ');
-
-  // ====================================================
-  // --- SHEET 4: VẬT TƯ Y TẾ & DỊCH TRUYỀN ĐÃ LOẠI TRỪ ---
-  // ====================================================
-  if (excludedItems.length > 0) {
-    const sheet4Data: any[][] = [
-      ['DANH MỤC VẬT TƯ VÀ DỊCH TRUYỀN ĐÃ ĐƯỢC HỆ THỐNG LỌC BỎ'],
-      [`Tổng số dòng đã lọc ra: ${excludedItems.length} dòng`],
+  // ========================================================
+  // --- SHEET 4: CẦN BỔ SUNG ĐƯỜNG DÙNG ---
+  // ========================================================
+  if (pendingChecks.length > 0) {
+    const sheetPendingData: any[][] = [
+      ['DANH SÁCH Y LỆNH CẦN BỔ SUNG ĐƯỜNG DÙNG'],
+      ['Vui lòng kiểm tra lại đường dùng hoặc dặn dò của bác sĩ điều trị'],
       [],
-      [
-        'STT',
-        'Tên bệnh nhân',
-        'Tên mục / Dịch / Vật tư',
-        'Phân loại',
-        'Đường dùng',
-        'Đơn vị',
-        'Giờ y lệnh',
-        'Lý do loại bỏ'
-      ]
+      ['STT', 'Tên người bệnh', 'Phòng', 'Tên thuốc', 'Ghi chú ban đầu', 'Lý do cần kiểm tra']
     ];
 
-    excludedItems.forEach((item, idx) => {
-      sheet4Data.push([
+    pendingChecks.forEach((p, idx) => {
+      sheetPendingData.push([
         idx + 1,
-        item.patientName,
-        item.itemName,
-        item.category === 'INFUSION' ? 'DỊCH TRUYỀN' : (item.category === 'MEDICAL_SUPPLY' ? 'VẬT TƯ Y TẾ' : 'KHÁC'),
-        item.route || '',
-        item.unit || '',
-        item.orderTime || '',
-        item.reason
+        p.patientName,
+        p.room || 'Chưa rõ',
+        p.drugName,
+        p.notes || '',
+        p.reason,
       ]);
     });
 
-    const ws4 = XLSX.utils.aoa_to_sheet(sheet4Data);
-    ws4['!cols'] = [
+    const wsPending = XLSX.utils.aoa_to_sheet(sheetPendingData);
+    wsPending['!cols'] = [
       { wch: 6 },
-      { wch: 25 },
-      { wch: 32 },
-      { wch: 16 },
-      { wch: 14 },
-      { wch: 12 },
-      { wch: 14 },
-      { wch: 45 }
+      { wch: 28 },
+      { wch: 20 },
+      { wch: 34 },
+      { wch: 26 },
+      { wch: 36 },
     ];
-    XLSX.utils.book_append_sheet(workbook, ws4, 'VẬT TƯ ĐÃ LOẠI');
+    XLSX.utils.book_append_sheet(workbook, wsPending, 'CẦN KIỂM TRA');
   }
 
-  // Trigger Excel Download
-  const dateStr = selectedDate ? selectedDate.replace(/\//g, '-') : new Date().toISOString().slice(0, 10);
-  const fileName = `So_Thuoc_Tiem_${departmentName.replace(/\s+/g, '_')}_${dateStr}.xlsx`;
+  // ========================================================
+  // --- SHEET 5: DỊCH TRUYỀN & VẬT TƯ ĐÃ LOẠI ---
+  // ========================================================
+  if (excludedItems.length > 0) {
+    const sheetExcludedData: any[][] = [
+      ['DANH SÁCH DỊCH TRUYỀN & VẬT TƯ ĐÃ TÁCH KHỎI SỔ THUỐC TIÊM'],
+      ['(Chỉ đưa thuốc tiêm, thuốc khí dung và insulin vào sổ tiêm)'],
+      [],
+      ['STT', 'Tên người bệnh', 'Tên vật tư / dịch truyền', 'Phân loại', 'Lý do loại']
+    ];
+
+    excludedItems.forEach((ex, idx) => {
+      sheetExcludedData.push([
+        idx + 1,
+        ex.patientName,
+        ex.itemName,
+        ex.category === 'INFUSION' ? 'Dịch truyền' : ex.category === 'MEDICAL_SUPPLY' ? 'Vật tư y tế' : 'Khác',
+        ex.reason,
+      ]);
+    });
+
+    const wsExcluded = XLSX.utils.aoa_to_sheet(sheetExcludedData);
+    wsExcluded['!cols'] = [
+      { wch: 6 },
+      { wch: 28 },
+      { wch: 36 },
+      { wch: 20 },
+      { wch: 36 },
+    ];
+    XLSX.utils.book_append_sheet(workbook, wsExcluded, 'VẬT TƯ & DỊCH TRUYỀN');
+  }
+
+  // Trigger Excel File Download
+  const cleanDate = (selectedDate || 'so_tiem').replace(/[\/\\]/g, '_');
+  const fileName = `So_Thuoc_Tiem_Ma_Tran_${cleanDate}.xlsx`;
   XLSX.writeFile(workbook, fileName);
 }

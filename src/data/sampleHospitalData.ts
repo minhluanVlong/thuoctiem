@@ -155,13 +155,13 @@ export const SAMPLE_DRUG_ORDERS_TODAY: RawDrugRecord[] = [
     doctor: 'Nguyễn Thị Hồng Cẩm',
     rowIndex: 8,
   },
-  // 8. LÊ THỊ TÝ - Zensonid, Vinsalmol 5 (PKD)
+  // 8. LÊ THỊ TÝ - Zensonid (PKD)
   {
     patientName: 'LÊ THỊ TÝ',
     gender: 'Nữ',
     dob: '01/01/1931',
     patientAddress: '387/6 Hòa Thuận, Xã Phú Phụng, Tỉnh Vĩnh Long',
-    departmentRoomBed: 'Khoa: KHOA NỘI TỔNG HỢP - NHI - TRUYỀN NHIỄM\nBuồng: Khu Nội - Nhi: Hồi sức 2',
+    departmentRoomBed: 'Khoa: KHOA NỘI TỔNG HỢP - NHI - TRUYỀN NHIỄM\nBuồng: Khu Nội - Nhi: Hồi sức 2\nGiường: 7',
     drugName: 'Zensonid (Budesonid 0,5mg/2ml)',
     activeIngredient: 'Budesonid - 0,5mg/2ml',
     strength: '0,5mg/2ml',
@@ -175,6 +175,27 @@ export const SAMPLE_DRUG_ORDERS_TODAY: RawDrugRecord[] = [
     orderDate: '31/08/2026',
     doctor: 'Nguyễn Thị Hồng Cẩm',
     rowIndex: 9,
+  },
+  // 8b. LÊ THỊ TÝ - Vinsalmol 5 (PKD)
+  {
+    patientName: 'LÊ THỊ TÝ',
+    gender: 'Nữ',
+    dob: '01/01/1931',
+    patientAddress: '387/6 Hòa Thuận, Xã Phú Phụng, Tỉnh Vĩnh Long',
+    departmentRoomBed: 'Khoa: KHOA NỘI TỔNG HỢP - NHI - TRUYỀN NHIỄM\nBuồng: Khu Nội - Nhi: Hồi sức 2\nGiường: 7',
+    drugName: 'Vinsalmol 5 (Salbutamol 5mg/2,5ml)',
+    activeIngredient: 'Salbutamol - 5mg/2,5ml',
+    strength: '5mg/2,5ml',
+    unit: 'Ống',
+    quantity: 1,
+    route: 'Khí dung (PKD)',
+    notes: 'Vinsalmol 5 (Salbutamol 5mg/2,5ml) 1 Ống pha với Zensonid 1 Lọ PKD',
+    treatmentSheet: 22,
+    categoryType: 'Thuốc tiêm',
+    orderTime: '07:15',
+    orderDate: '31/08/2026',
+    doctor: 'Nguyễn Thị Hồng Cẩm',
+    rowIndex: 10,
   },
   // 9. TRẦN VĂN THỚI (1950 - 76 tuổi) - Buồng bệnh 4, Giường 23
   {

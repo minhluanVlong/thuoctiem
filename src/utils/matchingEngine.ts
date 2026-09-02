@@ -200,9 +200,12 @@ export function processAndMatchHospitalData(params: {
   });
   const availableDates = Array.from(datesSet).sort();
 
-  // Filter drug records by selected date if provided
-  const targetDrugRecords = selectedDate && selectedDate !== 'ALL'
-    ? drugRecords.filter(r => r.orderDate === selectedDate || !r.orderDate)
+  // Filter drug records by selected date if provided (if selectedDate is empty string, include all records)
+  const trimmedSelectedDate = selectedDate ? selectedDate.trim() : '';
+  const targetDrugRecords = trimmedSelectedDate && trimmedSelectedDate !== 'ALL'
+    ? (drugRecords.some(r => r.orderDate === trimmedSelectedDate)
+        ? drugRecords.filter(r => r.orderDate === trimmedSelectedDate || !r.orderDate)
+        : drugRecords)
     : drugRecords;
 
   // Build Lookups from Room Records if available
@@ -338,6 +341,7 @@ export function processAndMatchHospitalData(params: {
       treatmentSheet: drugRec.treatmentSheet,
       categoryType: drugRec.categoryType,
       doctor: drugRec.doctor,
+      departmentRoomBed: drugRec.departmentRoomBed || matchedRoom?.departmentRoomBed,
       room: roomInfo.roomDisplay,
       area: roomInfo.area,
       roomNumber: roomInfo.roomNumber,

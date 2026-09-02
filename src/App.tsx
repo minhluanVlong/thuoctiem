@@ -1,6 +1,7 @@
 /**
  * SỔ THUỐC TIÊM ĐIỆN TỬ - Electronic Inpatient Injection Record
  * Hospital medication reconciliation, room matching, and administration workbook.
+ * Modeled accurately after the real hospital handwritten nurse injection book.
  */
 import React, { useState, useCallback } from 'react';
 import {
@@ -9,7 +10,10 @@ import {
   Droplets,
   Sparkles,
   GitCompare,
-  FileSpreadsheet
+  FileSpreadsheet,
+  BookOpen,
+  LayoutGrid,
+  ListOrdered
 } from 'lucide-react';
 
 import {
@@ -26,7 +30,7 @@ import {
   parseDrugOrderSheet,
 } from './utils/excelParser';
 
-import { processAndMatchHospitalData, sortInjectionRecords } from './utils/matchingEngine';
+import { processAndMatchHospitalData } from './utils/matchingEngine';
 import { exportHospitalWorkbook } from './utils/excelExporter';
 import {
   SAMPLE_DRUG_ORDERS_TODAY,
@@ -36,6 +40,7 @@ import {
 import { Header } from './components/Header';
 import { UploadSection } from './components/UploadSection';
 import { StatsCards } from './components/StatsCards';
+import { NurseMatrixTable } from './components/NurseMatrixTable';
 import { InjectionTable } from './components/InjectionTable';
 import { PendingCheckTable } from './components/PendingCheckTable';
 import { ExcludedItemsTable } from './components/ExcludedItemsTable';
@@ -47,7 +52,7 @@ export default function App() {
   // Hospital Settings State
   const [hospitalName, setHospitalName] = useState<string>('BỆNH VIỆN ĐA KHOA KV CHỢ LÁCH');
   const [departmentName, setDepartmentName] = useState<string>('KHOA NỘI TỔNG HỢP - NHI - TRUYỀN NHIỄM');
-  const [selectedDate, setSelectedDate] = useState<string>('31/08/2026');
+  const [selectedDate, setSelectedDate] = useState<string>(''); // Default blank as requested - user can input their custom date
 
   // Raw Loaded Data (Single HIS Excel file)
   const [rawDrugRecords, setRawDrugRecords] = useState<RawDrugRecord[]>([]);
@@ -61,7 +66,7 @@ export default function App() {
 
   // UI Flow State
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'MAIN_INJECTIONS' | 'PENDING_CHECKS' | 'EXCLUDED_ITEMS'>('MAIN_INJECTIONS');
+  const [activeTab, setActiveTab] = useState<'NURSE_MATRIX' | 'MAIN_INJECTIONS' | 'PENDING_CHECKS' | 'EXCLUDED_ITEMS'>('NURSE_MATRIX');
 
   // Modals State
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
@@ -93,10 +98,6 @@ export default function App() {
         if (result.report.departmentName) {
           setDepartmentName(result.report.departmentName);
         }
-
-        if (!selectedDate && result.report.availableDates.length > 0) {
-          setSelectedDate(result.report.availableDates[0]);
-        }
       } catch (err: any) {
         console.error('Processing error:', err);
         alert(`Lỗi trong quá trình xử lý dữ liệu: ${err.message}`);
@@ -124,13 +125,13 @@ export default function App() {
     }
   };
 
-  // Load Realistic Hospital Demo Data (90 records from BV Đa Khoa KV Chợ Lách)
+  // Load Realistic Hospital Demo Data (Matches exactly the real hospital nurse notebook)
   const handleLoadDemo = () => {
     setHospitalName('BỆNH VIỆN ĐA KHOA KV CHỢ LÁCH');
     setDepartmentName('KHOA NỘI TỔNG HỢP - NHI - TRUYỀN NHIỄM');
     setRawDrugRecords(SAMPLE_DRUG_ORDERS_TODAY);
     setDrugFilePreview({
-      fileName: 'thongke_truyendich_thuoc_tiem_31_08_2026.xlsx',
+      fileName: 'thongke_truyendich_thuoc_tiem_19_05_2026.xlsx',
       detectedHeaders: {
         patientName: 'Họ tên người bệnh',
         gender: 'Giới tính',
@@ -148,8 +149,8 @@ export default function App() {
       totalRows: SAMPLE_DRUG_ORDERS_TODAY.length,
     });
 
-    setSelectedDate('31/08/2026');
-    executeProcessing(SAMPLE_DRUG_ORDERS_TODAY, '31/08/2026', SAMPLE_DRUG_ORDERS_YESTERDAY);
+    setSelectedDate('19/05/2026');
+    executeProcessing(SAMPLE_DRUG_ORDERS_TODAY, '19/05/2026', SAMPLE_DRUG_ORDERS_YESTERDAY);
   };
 
   // Re-run when date selection changes
@@ -163,9 +164,44 @@ export default function App() {
   // Toggle single injection administration check
   const handleToggleExecution = (id: string) => {
     setInjections((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, isExecuted: !item.isExecuted } : item
-      )
+      prev.map((item) => {
+        if (item.id === id) {
+          const nextStatus = !item.isExecuted;
+          const slotsCount = item.timeSlots?.length || 1;
+          return {
+            ...item,
+            isExecuted: nextStatus,
+            timeSlotsExecuted: new Array(slotsCount).fill(nextStatus),
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  // Toggle specific dose/slot execution for an injection
+  const handleToggleSlotExecution = (id: string, slotIndex: number) => {
+    setInjections((prev) =>
+      prev.map((item) => {
+        if (item.id === id) {
+          const currentSlots = item.timeSlotsExecuted && item.timeSlotsExecuted.length > 0
+            ? [...item.timeSlotsExecuted]
+            : new Array(item.timeSlots?.length || 1).fill(!!item.isExecuted);
+
+          if (slotIndex >= 0 && slotIndex < currentSlots.length) {
+            currentSlots[slotIndex] = !currentSlots[slotIndex];
+          }
+
+          const allExecuted = currentSlots.length > 0 && currentSlots.every(Boolean);
+
+          return {
+            ...item,
+            timeSlotsExecuted: currentSlots,
+            isExecuted: allExecuted,
+          };
+        }
+        return item;
+      })
     );
   };
 
@@ -173,9 +209,17 @@ export default function App() {
   const handleBatchToggleExecution = (ids: string[], status: boolean) => {
     const idSet = new Set(ids);
     setInjections((prev) =>
-      prev.map((item) =>
-        idSet.has(item.id) ? { ...item, isExecuted: status } : item
-      )
+      prev.map((item) => {
+        if (idSet.has(item.id)) {
+          const slotsCount = item.timeSlots?.length || 1;
+          return {
+            ...item,
+            isExecuted: status,
+            timeSlotsExecuted: new Array(slotsCount).fill(status),
+          };
+        }
+        return item;
+      })
     );
   };
 
@@ -207,7 +251,7 @@ export default function App() {
     setPendingChecks((prev) => prev.filter((p) => p.id !== id));
   };
 
-  // Trigger Excel Export (Multi-sheet)
+  // Trigger Excel Export (Multi-sheet with Matrix + Details)
   const handleExportExcel = () => {
     if (!report || injections.length === 0) return;
     exportHospitalWorkbook({
@@ -215,6 +259,7 @@ export default function App() {
       pendingChecks,
       excludedItems,
       report,
+      reconciliationReport: report.reconciliationReport,
       selectedDate,
       departmentName,
     });
@@ -271,8 +316,8 @@ export default function App() {
         {report && (
           <StatsCards
             report={report}
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
+            activeTab={activeTab === 'NURSE_MATRIX' ? 'MAIN_INJECTIONS' : activeTab}
+            setActiveTab={(t) => setActiveTab(t as any)}
             onOpenDuplicates={() => setIsDuplicateModalOpen(true)}
           />
         )}
@@ -281,33 +326,52 @@ export default function App() {
         {hasData && (
           <div className="space-y-4">
             {/* Tab Navigation */}
-            <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2 rounded-t-xl shadow-2xs">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5 rounded-t-xl shadow-2xs flex-wrap gap-2">
               <div className="flex items-center gap-2 flex-wrap">
-                {/* Main Injections Tab */}
+                {/* 1. Nurse Matrix Tab (Primary Photo Layout) */}
+                <button
+                  id="tab-nurse-matrix"
+                  onClick={() => setActiveTab('NURSE_MATRIX')}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    activeTab === 'NURSE_MATRIX'
+                      ? 'bg-teal-800 text-white shadow-xs'
+                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  <span>SỔ TIÊM MA TRẬN (MẪU SỔ TAY ĐIỀU DƯỠNG)</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                    activeTab === 'NURSE_MATRIX' ? 'bg-teal-900 text-teal-100' : 'bg-teal-100 text-teal-800 font-bold'
+                  }`}>
+                    Mẫu ảnh
+                  </span>
+                </button>
+
+                {/* 2. Main 7-Column Injections Tab */}
                 <button
                   id="tab-main-injections"
                   onClick={() => setActiveTab('MAIN_INJECTIONS')}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                     activeTab === 'MAIN_INJECTIONS'
-                      ? 'bg-teal-700 text-white shadow-xs'
+                      ? 'bg-teal-800 text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
-                  <Syringe className="w-4 h-4" />
-                  <span>SỔ THUỐC TIÊM (CHUẨN 7 CỘT)</span>
+                  <ListOrdered className="w-4 h-4" />
+                  <span>DANH SÁCH CHI TIẾT (7 CỘT)</span>
                   <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                    activeTab === 'MAIN_INJECTIONS' ? 'bg-teal-800 text-teal-100' : 'bg-slate-200 text-slate-700'
+                    activeTab === 'MAIN_INJECTIONS' ? 'bg-teal-900 text-teal-100' : 'bg-slate-200 text-slate-700'
                   }`}>
                     {injections.length}
                   </span>
                 </button>
 
-                {/* Day Comparison Tab */}
+                {/* 3. Day Comparison Tab */}
                 {reconciliationReport && (
                   <button
                     id="tab-reconciliation"
                     onClick={() => setIsReconciliationModalOpen(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 cursor-pointer"
+                    className="inline-flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-lg transition-all text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 cursor-pointer"
                   >
                     <GitCompare className="w-4 h-4 text-teal-700" />
                     <span>ĐỐI CHIẾU VỚI HÔM TRƯỚC</span>
@@ -319,11 +383,11 @@ export default function App() {
                   </button>
                 )}
 
-                {/* Pending Checks Tab */}
+                {/* 4. Pending Checks Tab */}
                 <button
                   id="tab-pending-checks"
                   onClick={() => setActiveTab('PENDING_CHECKS')}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+                  className={`inline-flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                     activeTab === 'PENDING_CHECKS'
                       ? 'bg-amber-600 text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -340,11 +404,11 @@ export default function App() {
                   )}
                 </button>
 
-                {/* Excluded Items Tab */}
+                {/* 5. Excluded Items Tab */}
                 <button
                   id="tab-excluded-items"
                   onClick={() => setActiveTab('EXCLUDED_ITEMS')}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+                  className={`inline-flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                     activeTab === 'EXCLUDED_ITEMS'
                       ? 'bg-blue-600 text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -361,14 +425,29 @@ export default function App() {
               </div>
 
               {/* Quick Info in tab bar */}
-              <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500">
+              <div className="hidden lg:flex items-center gap-2 text-xs text-slate-500">
                 <span>Khoa: <strong className="text-slate-800">{departmentName}</strong></span>
                 <span>•</span>
-                <span>Ngày: <strong className="text-teal-800">{selectedDate || 'Hôm nay'}</strong></span>
+                <span>Ngày: <strong className="text-teal-800">{selectedDate || '19/05/2026'}</strong></span>
               </div>
             </div>
 
-            {/* Tab Contents */}
+            {/* Tab 1: Nurse Matrix Table (Primary Photo Match) */}
+            {activeTab === 'NURSE_MATRIX' && (
+              <NurseMatrixTable
+                injections={injections}
+                hospitalName={hospitalName}
+                departmentName={departmentName}
+                selectedDate={selectedDate}
+                onToggleExecution={handleToggleExecution}
+                onToggleSlotExecution={handleToggleSlotExecution}
+                onBatchToggleExecution={handleBatchToggleExecution}
+                onOpenPrintModal={() => setIsPrintModalOpen(true)}
+                onExportExcel={handleExportExcel}
+              />
+            )}
+
+            {/* Tab 2: Detailed 7-column table */}
             {activeTab === 'MAIN_INJECTIONS' && (
               <InjectionTable
                 injections={injections}
@@ -381,6 +460,7 @@ export default function App() {
               />
             )}
 
+            {/* Tab 3: Pending Checks */}
             {activeTab === 'PENDING_CHECKS' && (
               <PendingCheckTable
                 pendingChecks={pendingChecks}
@@ -390,6 +470,7 @@ export default function App() {
               />
             )}
 
+            {/* Tab 4: Excluded Items */}
             {activeTab === 'EXCLUDED_ITEMS' && (
               <ExcludedItemsTable
                 excludedItems={excludedItems}
@@ -408,7 +489,7 @@ export default function App() {
               Chào mừng bạn đến với Sổ Thuốc Tiêm Điện Tử
             </h3>
             <p className="text-xs text-slate-500 max-w-2xl mx-auto mt-1.5 leading-relaxed">
-              Ứng dụng tự động xử lý file xuất thống kê truyền dịch / thuốc tiêm HIS, tự động tính tuổi (năm hiện tại - năm sinh, số tháng cho bé nhi), bóc tách Khu và Buồng, nhận diện thuốc mới & đổi liều so với ngày hôm trước và tạo sổ thuốc tiêm chuẩn 7 cột cho điều dưỡng.
+              Ứng dụng tự động xử lý file xuất thống kê truyền dịch / thuốc tiêm HIS, tự động tạo <strong>Sổ Tiêm Dạng Ma Trận (Bệnh nhân × Thuốc kèm cữ giờ 7-15-23)</strong> mô phỏng chính xác mẫu sổ tay điều dưỡng thực tế tại bệnh viện, hỗ trợ gạch chéo trực tiếp và in ấn A4.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto mt-8 text-left text-xs">
@@ -425,20 +506,20 @@ export default function App() {
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
                 <div className="font-bold text-slate-800 mb-1 flex items-center gap-1.5">
                   <span className="w-5 h-5 rounded-full bg-teal-600 text-white text-[11px] font-bold flex items-center justify-center">2</span>
-                  Đối chiếu ngày hôm trước
+                  Sổ Tiêm Ma Trận Chuẩn Sổ Tay
                 </div>
                 <p className="text-slate-500 text-[11px]">
-                  Tự động so sánh hôm qua vs hôm nay, phát hiện thuốc mới (+), đổi liều (⟳) và thuốc ngưng (✕).
+                  Tự động chia cột theo tên thuốc, hiển thị liều lượng (1x3, 1/2x2) và các cữ giờ (7-15-23), hỗ trợ gạch chéo khi tiêm.
                 </p>
               </div>
 
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
                 <div className="font-bold text-slate-800 mb-1 flex items-center gap-1.5">
                   <span className="w-5 h-5 rounded-full bg-teal-600 text-white text-[11px] font-bold flex items-center justify-center">3</span>
-                  Xuất Excel 4 Sheet & In A4
+                  Xuất Excel Ma Trận & In A4 Ngang
                 </div>
                 <p className="text-slate-500 text-[11px]">
-                  Xuất Excel chuẩn 7 cột kèm sheet đối chiếu hoặc in theo buồng/phòng/ca trực.
+                  Xuất Excel nhiều sheet kèm ma trận điều dưỡng, hoặc in A4 ngang kẹp bìa đi buồng bệnh.
                 </p>
               </div>
             </div>
@@ -449,7 +530,7 @@ export default function App() {
                 className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold bg-teal-700 text-white hover:bg-teal-800 transition-all shadow-md active:scale-95 cursor-pointer"
               >
                 <Sparkles className="w-4 h-4 text-teal-200" />
-                Dùng thử ngay với Dữ liệu mẫu 90 dòng BV Chợ Lách
+                Dùng thử ngay với Dữ liệu mẫu Sổ Tiêm BV Chợ Lách
               </button>
             </div>
           </div>
@@ -461,7 +542,7 @@ export default function App() {
         Sổ Thuốc Tiêm Điện Tử • Thiết kế phục vụ công tác điều dưỡng và quản lý chất lượng bệnh viện • Dữ liệu xử lý an toàn tại trình duyệt
       </footer>
 
-      {/* Print Modal Dialog (A4 format) */}
+      {/* Print Modal Dialog (A4 Landscape Matrix / Portrait List format) */}
       <PrintModal
         isOpen={isPrintModalOpen}
         onClose={() => setIsPrintModalOpen(false)}

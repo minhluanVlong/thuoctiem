@@ -115,28 +115,38 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Date Selector & Primary Action Controls */}
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* Date Picker / Date Filter */}
-            <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 shadow-xs">
-              <Calendar className="w-3.5 h-3.5 text-slate-500 mr-1.5 shrink-0" />
-              <span className="font-medium text-slate-600 mr-1.5 whitespace-nowrap">Ngày thực hiện:</span>
-              
-              {availableDates.length > 1 ? (
+            {/* Date Input / Filter - Allows user to type custom date or leave blank */}
+            <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-700 shadow-xs focus-within:border-teal-500 focus-within:ring-1 focus-within:ring-teal-500">
+              <Calendar className="w-3.5 h-3.5 text-teal-700 mr-1.5 shrink-0" />
+              <span className="font-semibold text-slate-700 mr-1.5 whitespace-nowrap">Ngày y lệnh:</span>
+              <input
+                type="text"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                placeholder="Để trống hoặc tự nhập ngày..."
+                className="w-40 sm:w-48 px-1.5 py-0.5 font-bold text-teal-900 bg-white border border-slate-300 rounded outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-500 placeholder:text-slate-400 placeholder:font-normal text-xs"
+                title="Nhập ngày y lệnh theo ý muốn (hoặc để trống)"
+              />
+              {availableDates.length > 0 && (
                 <select
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-transparent font-bold text-teal-800 border-none outline-none cursor-pointer pr-1"
+                  value={availableDates.includes(selectedDate) ? selectedDate : ''}
+                  onChange={(e) => {
+                    if (e.target.value !== undefined) {
+                      setSelectedDate(e.target.value);
+                    }
+                  }}
+                  className="ml-1 text-[11px] bg-white text-slate-700 rounded px-1 py-0.5 border border-slate-300 outline-none cursor-pointer hover:border-teal-500"
+                  title="Chọn nhanh từ file Excel"
                 >
-                  <option value="ALL">Tất cả các ngày ({availableDates.length} ngày)</option>
+                  <option value="">-- Chọn nhanh --</option>
+                  <option value="">Để trống</option>
+                  <option value="ALL">Tất cả ngày</option>
                   {availableDates.map((d) => (
                     <option key={d} value={d}>
-                      {d} {d === todayStr ? '(Hôm nay)' : ''}
+                      {d}
                     </option>
                   ))}
                 </select>
-              ) : (
-                <span className="font-bold text-teal-800">
-                  {selectedDate || todayStr}
-                </span>
               )}
             </div>
 

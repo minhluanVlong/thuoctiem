@@ -20,8 +20,10 @@ export const ExcludedItemsTable: React.FC<ExcludedItemsTableProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'INFUSION' | 'MEDICAL_SUPPLY' | 'ORAL_OR_OTHER'>('ALL');
 
+  const safeItems = useMemo(() => excludedItems || [], [excludedItems]);
+
   const filteredItems = useMemo(() => {
-    let result = [...excludedItems];
+    let result = [...safeItems];
 
     if (categoryFilter !== 'ALL') {
       result = result.filter((i) => i.category === categoryFilter);
@@ -38,11 +40,11 @@ export const ExcludedItemsTable: React.FC<ExcludedItemsTableProps> = ({
     }
 
     return result;
-  }, [excludedItems, categoryFilter, searchTerm]);
+  }, [safeItems, categoryFilter, searchTerm]);
 
-  const infusionCount = excludedItems.filter((i) => i.category === 'INFUSION').length;
-  const supplyCount = excludedItems.filter((i) => i.category === 'MEDICAL_SUPPLY').length;
-  const otherCount = excludedItems.filter((i) => i.category === 'ORAL_OR_OTHER').length;
+  const infusionCount = safeItems.filter((i) => i.category === 'INFUSION').length;
+  const supplyCount = safeItems.filter((i) => i.category === 'MEDICAL_SUPPLY').length;
+  const otherCount = safeItems.filter((i) => i.category === 'ORAL_OR_OTHER').length;
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
@@ -51,7 +53,7 @@ export const ExcludedItemsTable: React.FC<ExcludedItemsTableProps> = ({
         <ShieldCheck className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
         <div>
           <h3 className="text-sm font-bold text-blue-900">
-            DỮ LIỆU ĐÃ TỰ ĐỘNG LOẠI KHỎI SỔ THUỐC TIÊM ({excludedItems.length} DÒNG)
+            DỮ LIỆU ĐÃ TỰ ĐỘNG LOẠI KHỎI SỔ THUỐC TIÊM ({safeItems.length} DÒNG)
           </h3>
           <p className="text-xs text-blue-800 mt-0.5">
             Bao gồm dịch truyền tĩnh mạch (NaCl, Glucose, Ringer Lactate...), vật tư y tế (bơm tiêm, kim luồn, dây truyền...) và các dạng thuốc không phải tiêm theo quy chuẩn điều dưỡng.

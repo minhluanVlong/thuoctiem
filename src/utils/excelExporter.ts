@@ -16,6 +16,7 @@ import {
   DayComparisonReport,
 } from '../types/hospital';
 import { buildNurseMatrixData } from './matrixBuilder';
+import { buildGroupedInjectionBook } from './patientBookBuilder';
 
 export function exportHospitalWorkbook(params: {
   injections: ProcessedInjectionRecord[];
@@ -38,8 +39,59 @@ export function exportHospitalWorkbook(params: {
 
   const workbook = XLSX.utils.book_new();
 
+  // Build the grouped book data for 2 Zones (Section 18)
+  const bookData = buildGroupedInjectionBook(injections);
+
   // =========================================================================
-  // --- SHEET 1: SỔ TIÊM MA TRẬN ĐIỀU DƯỠNG (MÔ PHỎNG SỔ TAY THỰC TẾ) ---
+  // --- HELPER TO BUILD 4-COLUMN SHEET FOR A WARD ---
+  // =========================================================================
+  const buildWardSheet = (patients: typeof bookData.khuNoiNhiPatients, wardTitle: string) => {
+    const sheetData: any[][] = [
+      [`SỔ THUỐC TIÊM – ${wardTitle.toUpperCase()}`],
+      [`Khoa: ${departmentName.toUpperCase()} | Ngày y lệnh: ${selectedDate || 'Dữ liệu Excel'} | Xuất lúc: ${new Date().toLocaleString('vi-VN')}`],
+      [],
+      ['STT', 'Tên', 'Tuổi', 'Số phòng', 'Thuốc tiêm'],
+    ];
+
+    patients.forEach((p, idx) => {
+      // Format multiline injection orders inside the cell
+      const medsCell = p.medications
+        .map((m) => {
+          const lines = [
+            m.originalDrugName,
+            m.dosageAndSolventText,
+            m.isInsulin ? '' : m.frequencyText,
+            m.timeScheduleText,
+          ].filter(Boolean);
+          return lines.join('\n');
+        })
+        .join('\n\n');
+
+      sheetData.push([idx + 1, p.patientName, p.age || '', p.shortRoom, medsCell]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(sheetData);
+    ws['!cols'] = [
+      { wch: 6 },   // STT
+      { wch: 28 },  // Tên
+      { wch: 10 },  // Tuổi
+      { wch: 18 },  // Số phòng
+      { wch: 55 },  // Thuốc tiêm (multiline)
+    ];
+
+    return ws;
+  };
+
+  // ---------------- SHEET 1: KHU NỘI NHI (Section 18) ----------------
+  const wsKhuNoiNhi = buildWardSheet(bookData.khuNoiNhiPatients, 'KHU NỘI NHI');
+  XLSX.utils.book_append_sheet(workbook, wsKhuNoiNhi, 'KHU NỘI NHI');
+
+  // ---------------- SHEET 2: KHU NHIỄM (Section 18) ----------------
+  const wsKhuNhiem = buildWardSheet(bookData.khuNhiemPatients, 'KHU NHIỄM');
+  XLSX.utils.book_append_sheet(workbook, wsKhuNhiem, 'KHU NHIỄM');
+
+  // =========================================================================
+  // --- SHEET 3: SỔ TIÊM MA TRẬN ĐIỀU DƯỠNG (MÔ PHỎNG SỔ TAY THỰC TẾ) ---
   // =========================================================================
   const matrixData = buildNurseMatrixData(injections);
 

@@ -3,8 +3,6 @@ import {
   AlertTriangle,
   X,
   Trash2,
-  CheckCircle,
-  Copy,
   Info
 } from 'lucide-react';
 import { ProcessedInjectionRecord } from '../types/hospital';
@@ -12,8 +10,10 @@ import { ProcessedInjectionRecord } from '../types/hospital';
 interface DuplicateWarningModalProps {
   isOpen: boolean;
   onClose: () => void;
-  injections: ProcessedInjectionRecord[];
-  onRemoveRecord: (id: string) => void;
+  injections?: ProcessedInjectionRecord[];
+  duplicates?: ProcessedInjectionRecord[];
+  onRemoveRecord?: (id: string) => void;
+  onRemoveDuplicate?: (id: string) => void;
   onKeepAll: () => void;
 }
 
@@ -21,18 +21,21 @@ export const DuplicateWarningModal: React.FC<DuplicateWarningModalProps> = ({
   isOpen,
   onClose,
   injections,
+  duplicates,
   onRemoveRecord,
+  onRemoveDuplicate,
   onKeepAll,
 }) => {
   // Group duplicates by duplicateGroupKey
   const duplicateGroups = useMemo(() => {
     const map = new Map<string, ProcessedInjectionRecord[]>();
+    const list = (injections && injections.length > 0) ? injections : (duplicates || []);
 
-    injections.forEach((item) => {
-      if (item.isDuplicate && item.duplicateGroupKey) {
-        const list = map.get(item.duplicateGroupKey) || [];
-        list.push(item);
-        map.set(item.duplicateGroupKey, list);
+    list.forEach((item) => {
+      if (item && item.isDuplicate && item.duplicateGroupKey) {
+        const existing = map.get(item.duplicateGroupKey) || [];
+        existing.push(item);
+        map.set(item.duplicateGroupKey, existing);
       }
     });
 
@@ -44,9 +47,17 @@ export const DuplicateWarningModal: React.FC<DuplicateWarningModalProps> = ({
       room: items[0]?.room || '',
       items,
     }));
-  }, [injections]);
+  }, [injections, duplicates]);
 
   if (!isOpen) return null;
+
+  const handleDelete = (id: string) => {
+    if (onRemoveRecord) {
+      onRemoveRecord(id);
+    } else if (onRemoveDuplicate) {
+      onRemoveDuplicate(id);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -85,7 +96,7 @@ export const DuplicateWarningModal: React.FC<DuplicateWarningModalProps> = ({
             </div>
           ) : (
             <div className="space-y-4">
-              {duplicateGroups.map((grp, gIdx) => (
+              {duplicateGroups.map((grp) => (
                 <div key={grp.key} className="border border-orange-200 rounded-xl overflow-hidden bg-white shadow-2xs">
                   {/* Group summary bar */}
                   <div className="bg-orange-100/60 px-4 py-2.5 flex items-center justify-between text-xs border-b border-orange-200">
@@ -102,7 +113,7 @@ export const DuplicateWarningModal: React.FC<DuplicateWarningModalProps> = ({
 
                   {/* List of items in this duplicate group */}
                   <div className="p-3 divide-y divide-slate-100">
-                    {grp.items.map((item, itemIdx) => (
+                    {grp.items.map((item) => (
                       <div key={item.id} className="py-2 flex items-center justify-between text-xs">
                         <div className="flex items-center gap-3">
                           <span className="text-slate-400 font-mono">Dòng #{item.stt}</span>
@@ -114,7 +125,7 @@ export const DuplicateWarningModal: React.FC<DuplicateWarningModalProps> = ({
                         </div>
 
                         <button
-                          onClick={() => onRemoveRecord(item.id)}
+                          onClick={() => handleDelete(item.id)}
                           className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors"
                           title="Xóa bớt dòng y lệnh này khỏi sổ chính"
                         >

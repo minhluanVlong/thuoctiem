@@ -185,10 +185,10 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 id="btn-select-drug-file"
                 type="button"
                 onClick={() => drugInputRef.current?.click()}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-teal-700 text-white hover:bg-teal-800 transition-colors shadow-xs cursor-pointer"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-blue-700 text-white hover:bg-blue-800 transition-colors shadow-xs cursor-pointer"
               >
                 <Upload className="w-4 h-4" />
-                {drugFilePreview ? 'Chọn file Excel khác' : 'Tải file Excel thống kê'}
+                {drugFilePreview ? 'TẢI FILE EXCEL KHÁC' : 'TẢI FILE EXCEL'}
               </button>
 
               <button
@@ -229,12 +229,12 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             {isProcessing ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                <span>ĐANG XỬ LÝ & BÓC TÁCH DỮ LIỆU...</span>
+                <span>ĐANG XỬ LÝ DỮ LIỆU...</span>
               </>
             ) : (
               <>
                 <FileCheck className="w-5 h-5" />
-                <span>XỬ LÝ DỮ LIỆU & TẠO SỔ TIÊM</span>
+                <span>XỬ LÝ DỮ LIỆU</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}

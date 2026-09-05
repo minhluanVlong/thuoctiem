@@ -82,7 +82,7 @@ export const InjectionTable: React.FC<InjectionTableProps> = ({
   // Extract distinct filter values
   const roomList = useMemo(() => {
     const set = new Set<string>();
-    injections.forEach((item) => {
+    (injections || []).forEach((item) => {
       if (item.room) set.add(item.room);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'vi', { numeric: true }));
@@ -90,7 +90,7 @@ export const InjectionTable: React.FC<InjectionTableProps> = ({
 
   const routeList = useMemo(() => {
     const set = new Set<string>();
-    injections.forEach((item) => {
+    (injections || []).forEach((item) => {
       if (item.route && item.route.trim()) set.add(item.route.trim());
     });
     return Array.from(set).sort();
@@ -100,7 +100,7 @@ export const InjectionTable: React.FC<InjectionTableProps> = ({
     let newCount = 0;
     let changedCount = 0;
     let unchangedCount = 0;
-    injections.forEach(i => {
+    (injections || []).forEach(i => {
       if (i.changeStatus === 'NEW') newCount++;
       else if (i.changeStatus === 'CHANGED_DOSE' || i.changeStatus === 'CHANGED_TIME') changedCount++;
       else if (i.changeStatus === 'UNCHANGED') unchangedCount++;
@@ -110,7 +110,7 @@ export const InjectionTable: React.FC<InjectionTableProps> = ({
 
   // Filter & Search Logic
   const filteredInjections = useMemo(() => {
-    let result = [...injections];
+    let result = Array.isArray(injections) ? [...injections] : [];
 
     // Missing route filter
     if (missingRouteOnly) {

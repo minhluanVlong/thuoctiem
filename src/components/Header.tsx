@@ -7,7 +7,8 @@ import {
   Calendar,
   Building2,
   Stethoscope,
-  Clock
+  BookOpen,
+  Trash2
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -22,6 +23,7 @@ interface HeaderProps {
   onExportExcel: () => void;
   onOpenPrint: () => void;
   onReset: () => void;
+  onViewBook?: () => void;
   hasData: boolean;
 }
 
@@ -37,36 +39,28 @@ export const Header: React.FC<HeaderProps> = ({
   onExportExcel,
   onOpenPrint,
   onReset,
+  onViewBook,
   hasData,
 }) => {
   const [isEditingInfo, setIsEditingInfo] = useState(false);
 
-  const todayStr = new Date().toLocaleDateString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
-
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           {/* Brand & Hospital Info */}
-          <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-teal-600 flex items-center justify-center text-white shadow-sm shrink-0">
-              <Stethoscope className="w-6 h-6" />
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-700 flex items-center justify-center text-white shadow-xs shrink-0">
+              <Stethoscope className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-                  SỔ THUỐC TIÊM ĐIỆN TỬ
+                <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight uppercase">
+                  SỔ THUỐC TIÊM – KHOA NỘI TỔNG HỢP NHI TRUYỀN NHIỄM
                 </h1>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-teal-50 text-teal-700 border border-teal-200">
-                  Điều Dưỡng Nội Trú
-                </span>
               </div>
-              
-              {/* Facility & Department clickable edit */}
+
+              {/* Facility & Department editable */}
               <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
                 {isEditingInfo ? (
                   <div className="flex items-center gap-2">
@@ -75,7 +69,7 @@ export const Header: React.FC<HeaderProps> = ({
                       value={hospitalName}
                       onChange={(e) => setHospitalName(e.target.value)}
                       placeholder="Tên Bệnh viện / Trung tâm"
-                      className="px-2 py-0.5 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-teal-500 outline-none"
+                      className="px-2 py-0.5 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
                     />
                     <span>/</span>
                     <input
@@ -83,11 +77,11 @@ export const Header: React.FC<HeaderProps> = ({
                       value={departmentName}
                       onChange={(e) => setDepartmentName(e.target.value)}
                       placeholder="Khoa điều trị"
-                      className="px-2 py-0.5 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-teal-500 outline-none"
+                      className="px-2 py-0.5 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
                     />
                     <button
                       onClick={() => setIsEditingInfo(false)}
-                      className="px-2 py-0.5 text-xs bg-teal-600 text-white rounded hover:bg-teal-700"
+                      className="px-2 py-0.5 text-xs bg-blue-700 text-white rounded hover:bg-blue-800"
                     >
                       Lưu
                     </button>
@@ -95,36 +89,36 @@ export const Header: React.FC<HeaderProps> = ({
                 ) : (
                   <button
                     onClick={() => setIsEditingInfo(true)}
-                    className="flex items-center gap-1.5 hover:text-teal-700 group text-left"
+                    className="flex items-center gap-1.5 hover:text-blue-700 group text-left cursor-pointer"
                     title="Bấm để thay đổi tên Bệnh viện và Khoa"
                   >
-                    <Building2 className="w-3.5 h-3.5 text-slate-400 group-hover:text-teal-600" />
-                    <span className="font-medium text-slate-700 underline decoration-slate-300 decoration-dotted underline-offset-2">
+                    <Building2 className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600" />
+                    <span className="font-medium text-slate-700">
                       {hospitalName}
                     </span>
                     <span>•</span>
-                    <span className="font-semibold text-teal-800">
+                    <span className="font-bold text-blue-900">
                       {departmentName}
                     </span>
-                    <span className="text-[10px] text-slate-400 group-hover:text-teal-600">(Đổi tên)</span>
+                    <span className="text-[10px] text-slate-400 group-hover:text-blue-600">(Sửa tên)</span>
                   </button>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Date Selector & Primary Action Controls */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* Date Input / Filter - Allows user to type custom date or leave blank */}
-            <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-700 shadow-xs focus-within:border-teal-500 focus-within:ring-1 focus-within:ring-teal-500">
-              <Calendar className="w-3.5 h-3.5 text-teal-700 mr-1.5 shrink-0" />
-              <span className="font-semibold text-slate-700 mr-1.5 whitespace-nowrap">Ngày y lệnh:</span>
+          {/* Date Selector & Required Action Buttons (Section 24) */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Date Input / Filter */}
+            <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-700 shadow-xs focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
+              <Calendar className="w-3.5 h-3.5 text-blue-700 mr-1.5 shrink-0" />
+              <span className="font-semibold text-slate-700 mr-1.5 whitespace-nowrap">Ngày:</span>
               <input
                 type="text"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                placeholder="Để trống hoặc tự nhập ngày..."
-                className="w-40 sm:w-48 px-1.5 py-0.5 font-bold text-teal-900 bg-white border border-slate-300 rounded outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-500 placeholder:text-slate-400 placeholder:font-normal text-xs"
+                placeholder="Nhập ngày hoặc để trống"
+                className="w-32 sm:w-36 px-1.5 py-0.5 font-bold text-blue-950 bg-white border border-slate-300 rounded outline-none focus:border-blue-600 text-xs"
                 title="Nhập ngày y lệnh theo ý muốn (hoặc để trống)"
               />
               {availableDates.length > 0 && (
@@ -135,10 +129,10 @@ export const Header: React.FC<HeaderProps> = ({
                       setSelectedDate(e.target.value);
                     }
                   }}
-                  className="ml-1 text-[11px] bg-white text-slate-700 rounded px-1 py-0.5 border border-slate-300 outline-none cursor-pointer hover:border-teal-500"
+                  className="ml-1 text-[11px] bg-white text-slate-700 rounded px-1 py-0.5 border border-slate-300 outline-none cursor-pointer hover:border-blue-500"
                   title="Chọn nhanh từ file Excel"
                 >
-                  <option value="">-- Chọn nhanh --</option>
+                  <option value="">-- Chọn ngày --</option>
                   <option value="">Để trống</option>
                   <option value="ALL">Tất cả ngày</option>
                   {availableDates.map((d) => (
@@ -155,52 +149,66 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 id="btn-load-demo"
                 onClick={onLoadDemo}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400 transition-colors shadow-xs"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition-colors shadow-xs cursor-pointer"
+                title="Nạp dữ liệu mẫu thực tế BV Chợ Lách"
               >
-                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                Dữ liệu mẫu (1-Click)
+                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                Dữ liệu mẫu BV
               </button>
             )}
 
-            {/* Export Excel Button */}
-            <button
-              id="btn-export-excel"
-              disabled={!hasData}
-              onClick={onExportExcel}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-xs ${
-                hasData
-                  ? 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95'
-                  : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-              }`}
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              Xuất Excel (3 Sheet)
-            </button>
+            {/* 1. NÚT BẮT BUỘC: XEM SỔ THUỐC */}
+            {hasData && onViewBook && (
+              <button
+                id="btn-view-book"
+                onClick={onViewBook}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-50 text-blue-800 border border-blue-300 hover:bg-blue-100 transition-all shadow-xs cursor-pointer"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-blue-700" />
+                XEM SỔ THUỐC
+              </button>
+            )}
 
-            {/* Print Button */}
+            {/* 2. NÚT BẮT BUỘC: IN SỔ */}
             <button
               id="btn-open-print"
               disabled={!hasData}
               onClick={onOpenPrint}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-xs ${
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer ${
                 hasData
-                  ? 'bg-teal-700 text-white hover:bg-teal-800 active:scale-95'
+                  ? 'bg-blue-700 text-white hover:bg-blue-800 active:scale-95'
                   : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
               }`}
             >
               <Printer className="w-3.5 h-3.5" />
-              In Sổ Tiêm (A4)
+              IN SỔ
             </button>
 
-            {/* Reset Data Button */}
+            {/* 3. NÚT BẮT BUỘC: XUẤT EXCEL */}
+            <button
+              id="btn-export-excel"
+              disabled={!hasData}
+              onClick={onExportExcel}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                hasData
+                  ? 'bg-emerald-700 text-white hover:bg-emerald-800 active:scale-95'
+                  : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+              }`}
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              XUẤT EXCEL
+            </button>
+
+            {/* 4. NÚT BẮT BUỘC: XÓA DỮ LIỆU */}
             {hasData && (
               <button
                 id="btn-reset-data"
                 onClick={onReset}
-                title="Làm mới để tải cặp file mới"
-                className="inline-flex items-center justify-center p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 transition-colors shadow-xs"
+                title="Xóa toàn bộ dữ liệu hiện tại để tải file mới"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors shadow-xs cursor-pointer"
               >
-                <RotateCcw className="w-4 h-4" />
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                <span>XÓA DỮ LIỆU</span>
               </button>
             )}
           </div>

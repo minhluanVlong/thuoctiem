@@ -684,13 +684,14 @@ export function normalizeDrugColumnHeader(drugFullName: string, route: string): 
  *    - Zone 1: Khu Nội - Nhi (Trừ phòng Lão khoa, Nhi 1, Nhi 2)
  *    - Zone 2: Phòng Lão khoa, Nhi 1, Nhi 2 & Khu Nhiễm
  */
-export function buildNurseMatrixData(injections: ProcessedInjectionRecord[]): MatrixSheetData {
+export function buildNurseMatrixData(injections: ProcessedInjectionRecord[] = []): MatrixSheetData {
+  const safeInjections = Array.isArray(injections) ? injections : [];
   const columnMap = new Map<string, MatrixDrugColumn>();
   const patientMap = new Map<string, MatrixPatientRow>();
   const roomsSet = new Set<string>();
 
   // 1. Identify all distinct drug columns
-  injections.forEach((item) => {
+  safeInjections.forEach((item) => {
     const { id, shortName, routeLabel, fullTitle } = normalizeDrugColumnHeader(
       item.drugFullName || item.originalDrugName,
       item.route
@@ -728,7 +729,7 @@ export function buildNurseMatrixData(injections: ProcessedInjectionRecord[]): Ma
   });
 
   // 2. Identify and group rows by Patient (ALL medications on the same single row)
-  injections.forEach((item) => {
+  safeInjections.forEach((item) => {
     const rawRoom = item.room || '';
     const roomStr = rawRoom.replace(/^Phòng\s+/i, '').replace(/^Buồng\s+/i, '').trim() || 'Chưa rõ';
     if (roomStr) roomsSet.add(roomStr);
@@ -940,7 +941,7 @@ export function buildNurseMatrixData(injections: ProcessedInjectionRecord[]): Ma
     allRooms,
     totalPatients: allRows.length,
     totalDrugs: columns.length,
-    totalInjections: injections.length,
+    totalInjections: safeInjections.length,
   };
 }
 

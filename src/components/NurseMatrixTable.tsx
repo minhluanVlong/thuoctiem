@@ -37,6 +37,7 @@ interface NurseMatrixTableProps {
   onBatchToggleExecution?: (ids: string[], status: boolean) => void;
   onOpenPrintModal?: () => void;
   onExportExcel?: () => void;
+  onOpenAiModal?: () => void;
 }
 
 export const NurseMatrixTable: React.FC<NurseMatrixTableProps> = ({
@@ -49,6 +50,7 @@ export const NurseMatrixTable: React.FC<NurseMatrixTableProps> = ({
   onBatchToggleExecution,
   onOpenPrintModal,
   onExportExcel,
+  onOpenAiModal,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedZone, setSelectedZone] = useState<'ALL' | 'ZONE_1' | 'ZONE_2'>('ALL');
@@ -178,6 +180,19 @@ export const NurseMatrixTable: React.FC<NurseMatrixTableProps> = ({
 
           {/* Quick Actions */}
           <div className="flex items-center gap-2 flex-wrap">
+            {/* AI Vision & JSON Matrix Extraction */}
+            {onOpenAiModal && (
+              <button
+                type="button"
+                onClick={onOpenAiModal}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-teal-800 hover:bg-teal-900 text-white transition-colors cursor-pointer shadow-xs border border-teal-700"
+                title="Bóc tách dữ liệu từ hình ảnh báo cáo y lệnh hoặc dán JSON ma trận bằng AI Gemini"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>AI Bóc tách Y lệnh</span>
+              </button>
+            )}
+
             {/* Toggle notebook grid paper theme */}
             <button
               type="button"
@@ -577,7 +592,7 @@ export const NurseMatrixTable: React.FC<NurseMatrixTableProps> = ({
                                 notebookStyle ? 'border-[#ded5c2]' : 'border-slate-200'
                               }`}
                             >
-                              <span className="text-slate-300 select-none">•</span>
+                              <span className="text-slate-400 font-bold select-none text-base">.</span>
                             </td>
                           );
                         }
@@ -690,12 +705,19 @@ export const NurseMatrixTable: React.FC<NurseMatrixTableProps> = ({
                                 })}
                               </div>
 
-                              {/* 3. Special notes like "+ có Zensonid", "+ Mới", "Pha cất" (Red ink style) */}
-                              {cell.notes && (
-                                <div className="text-[10px] font-bold text-rose-600 line-clamp-1 leading-tight" title={cell.notes}>
-                                  {cell.notes}
-                                </div>
-                              )}
+                              {/* 3. Chi tiết nguyên văn tên thuốc, hàm lượng, dung môi pha từ cột Ghi chú & ghi chú kèm */}
+                              <div className="pt-0.5 space-y-0.5 border-t border-slate-200/60">
+                                {cell.notes && (
+                                  <div className="text-[10px] font-bold text-rose-600 line-clamp-1 leading-tight" title={cell.notes}>
+                                    {cell.notes}
+                                  </div>
+                                )}
+                                {cell.detailVerbatim && cell.detailVerbatim !== cell.notes && (
+                                  <div className="text-[9.5px] font-medium text-slate-600 line-clamp-2 leading-snug italic" title={cell.detailVerbatim}>
+                                    {cell.detailVerbatim}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </td>
                         );

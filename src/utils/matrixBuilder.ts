@@ -75,16 +75,18 @@ export interface MatrixCellData {
   recordId: string;
   drugFullName: string;
   shortName: string;
-  doseText: string;              // e.g. "1 x 3", "2/3 x 3", "1", "1/2 x 2", "1/5", "10 UI"
-  timeSchedule: string;          // e.g. "7:05 - 15:05 - 23:05", "7:01 - 19:01", "7 - 15 - 23"
-  timeSlots: string[];           // ["7:05", "15:05", "23:05"]
+  doseText: string;              // e.g. "1 x 3", "2/3", "1", "2", "3"
+  timeSchedule: string;          // e.g. "7:15 - 15:15 - 23:15", "08:00 - 16:00"
+  timeSlots: string[];           // ["7:15", "15:15", "23:15"]
   timeSlotsExecuted: boolean[];  // [true, false, false]
   isExecuted: boolean;
   notes?: string;                // e.g. "+ có Zensonid", "Pha 5ml NaCl", "TMC chậm"
+  detailVerbatim?: string;       // Dòng 3: Chi tiết nguyên văn tên thuốc, hàm lượng, dung môi pha từ cột Ghi chú
   changeStatus?: MedicationChangeStatus;
   route?: string;                // TMC, PKD, TDD, IM
   unit?: string;
   quantity: string | number;
+  orderCount?: number;           // Track number of merged orders
   rawRecord: ProcessedInjectionRecord;
 }
 
@@ -135,7 +137,7 @@ export interface MatrixSheetData {
  * (e.g. 07:05 and 07:15) are merged into one slot per shift window,
  * completely preventing fake "1x6" doses or duplicated hours.
  */
-export function mergeAndNormalizeTimeSlots(slotsA: string[], slotsB: string[], maxAllowed: number = 4): string[] {
+export function mergeAndNormalizeTimeSlots(slotsA: string[], slotsB: string[], maxAllowed: number = 6): string[] {
   const allRaw = [...slotsA, ...slotsB].map((s) => (s || '').trim()).filter(Boolean);
   if (allRaw.length === 0) return ['7:00'];
 
@@ -158,12 +160,12 @@ export function mergeAndNormalizeTimeSlots(slotsA: string[], slotsB: string[], m
   // Sort by time of day
   parsed.sort((a, b) => a.totalMinutes - b.totalMinutes);
 
-  // Cluster slots that fall in the same shift window (within 3.5 hours = 210 mins of each other)
+  // Cluster slots that fall in the same shift start window (within 45 mins of each other e.g. 07:00 and 07:15)
   const clusters: { hour: number; minute: number; hasExplicitMinute: boolean; totalMinutes: number }[] = [];
   for (const item of parsed) {
     const existingIndex = clusters.findIndex((c) => {
       const diff = Math.abs(c.totalMinutes - item.totalMinutes);
-      return diff <= 210 || Math.abs(diff - 1440) <= 210;
+      return diff <= 45 || Math.abs(diff - 1440) <= 45;
     });
 
     if (existingIndex >= 0) {
@@ -179,7 +181,7 @@ export function mergeAndNormalizeTimeSlots(slotsA: string[], slotsB: string[], m
   // Sort clusters chronologically
   clusters.sort((a, b) => a.totalMinutes - b.totalMinutes);
 
-  // Cap at maxAllowed (usually 3 or 4)
+  // Cap at maxAllowed (allows up to 6 doses per day)
   const finalClusters = clusters.slice(0, maxAllowed);
 
   return finalClusters.map((c) => {
@@ -365,10 +367,11 @@ export function formatDoseAndTimeSchedule(record: ProcessedInjectionRecord): {
     }
   } else {
     // ---------------- STANDARD INJECTIONS & AEROSOLS (ANTIBIOTICS, VINSALMOL, ZENSONID, ETC.) ----------------
-    // 1. Determine single dose (e.g. "1", "1/2", "2/3", "1/3", "1/4")
     const isVinsalmolOrPKD =
       drugNameLower.includes('vinsalmol') ||
+      drugNameLower.includes('vinsamol') ||
       drugNameLower.includes('zensonid') ||
+      drugNameLower.includes('zensonide') ||
       drugNameLower.includes('pulmicort') ||
       drugNameLower.includes('berodual') ||
       drugNameLower.includes('combivent') ||
@@ -378,162 +381,191 @@ export function formatDoseAndTimeSchedule(record: ProcessedInjectionRecord): {
       routeLower.includes('pkd') ||
       routeLower.includes('khí dung');
 
+    // 1. Determine single dose (e.g. "1", "2/3", "1/2", "1/3", "1/4")
+    // CRITICAL: Must NEVER mistake dates (e.g. 02/03, 2/3, 2/3/2026, ngày 2/3) or treatment sheet numbers for fractional doses!
     let singleDose = '1';
-    if (rawNotes.includes('1/2') || rawNotes.includes('0.5') || Math.abs(qty - 0.5) < 0.05 || (isPediatric && (isVinsalmolOrPKD || drugNameLower.includes('hydrocortison')))) {
-      singleDose = '1/2';
-    } else if (rawNotes.includes('2/3') || Math.abs(qty - 0.67) < 0.05 || (isPediatric && (drugNameLower.includes('catachit') || drugNameLower.includes('ceftazidim') || drugNameLower.includes('cefotaxim')))) {
+
+    if (Math.abs(qty - 0.67) < 0.05 || Math.abs(qty - 0.66) < 0.05) {
       singleDose = '2/3';
-    } else if (rawNotes.includes('1/3') || Math.abs(qty - 0.33) < 0.05) {
+    } else if (Math.abs(qty - 0.5) < 0.05) {
+      singleDose = '1/2';
+    } else if (Math.abs(qty - 0.33) < 0.05) {
       singleDose = '1/3';
-    } else if (rawNotes.includes('1/4') || Math.abs(qty - 0.25) < 0.05) {
+    } else if (Math.abs(qty - 0.25) < 0.05) {
       singleDose = '1/4';
-    } else if (rawNotes.includes('1/5') || Math.abs(qty - 0.2) < 0.05) {
-      singleDose = '1/5';
     } else if (Math.abs(qty - 0.75) < 0.05) {
       singleDose = '3/4';
-    } else if (qty === 1) {
-      singleDose = '1';
-    } else if (qty > 1 && qty <= 4 && isVinsalmolOrPKD) {
-      singleDose = isPediatric ? '1/2' : '1';
-    } else if (qty % 1 === 0 && qty > 4) {
-      singleDose = `${qty}`;
+    } else if (Math.abs(qty - 0.2) < 0.05) {
+      singleDose = '1/5';
+    } else {
+      // Clean notes from all dates, treatment sheets, and order timestamps before inspecting for fractional dosage
+      const notesCleanForDose = rawNotes
+        .replace(/\b(?:ngày|ngay|ng|d)\s*\d{1,2}\s*[\/\-]\s*\d{1,2}(?:\s*[\/\-]\s*\d{2,4})?\b/gi, '')
+        .replace(/\b\d{1,2}\s*[\/\-]\s*\d{1,2}\s*[\/\-]\s*\d{2,4}\b/g, '')
+        .replace(/\b\d{1,2}\/\d{1,2}\b/g, '') // remove standalone DD/MM dates like 2/3 or 02/03
+        .replace(/\b(?:tờ|to|bệnh án|ba|sheet)\s*\d+\s*[\/\-]\s*\d+\b/gi, '')
+        .replace(/\b(?:lần|lan)\s*\d+\s*[\/\-]\s*\d+\b/gi, '');
+
+      // Check strictly for explicit fraction dosage with medication unit or action verb
+      // e.g. "tiêm 2/3 lọ", "dùng 1/2 lọ", "lấy 2/3 lọ", "phun 2/3", "1/2 ống"
+      const explicitFracMatch =
+        notesCleanForDose.match(/(?:tiêm|dùng|uống|phun|lấy)\s+([1-4])\s*\/\s*([2-5])\b/i) ||
+        notesCleanForDose.match(/\b([1-4])\s*\/\s*([2-5])\s*(?:lọ|ống|tép|chai|viên|gói|liều)\b/i);
+
+      if (explicitFracMatch) {
+        singleDose = `${explicitFracMatch[1]}/${explicitFracMatch[2]}`;
+      } else {
+        singleDose = '1';
+      }
     }
 
     // 2. Determine frequency (number of times per day: 1 cữ, 2 cữ, 3 cữ, 4 cữ)
     frequency = 1;
 
-    const cleanNotesForFreq = rawNotes.replace(/nước cất[^,;]*\d+\s*ống/gi, '');
-    const freqExplicitMatch = cleanNotesForFreq.match(/(?:x\s*([1-4])\b)|(?:([1-4])\s*(?:lần\/ngày|l\/ngày|l\/ng|lần|cữ|cử)\b)/i);
-
-    if (freqExplicitMatch) {
-      const parsedFreq = parseInt(freqExplicitMatch[1] || freqExplicitMatch[2], 10);
-      if (!isNaN(parsedFreq) && parsedFreq >= 1 && parsedFreq <= 4) {
-        frequency = parsedFreq;
-      }
-    } else if (
-      rawNotes.includes('cách 8 giờ') || rawNotes.includes('cách 8h') || rawNotes.includes('cách 8 g') ||
-      rawNotes.includes('7-15-23') || rawNotes.includes('7h-15h-23h') || rawNotes.includes('8-16-24') || rawNotes.includes('8h-16h-24h') ||
-      rawNotes.includes('7:05-15:05-23:05') || rawNotes.includes('7h05-15h05-23h05')
-    ) {
-      frequency = 3;
-    } else if (
-      rawNotes.includes('cách 12 giờ') || rawNotes.includes('cách 12h') || rawNotes.includes('cách 12 g') ||
-      rawNotes.includes('7-19') || rawNotes.includes('7h-19h') || rawNotes.includes('9-21') || rawNotes.includes('9h-21h') ||
-      rawNotes.includes('8-20') || rawNotes.includes('8h-20h') || rawNotes.includes('sáng - chiều') || rawNotes.includes('sang - chieu') ||
-      rawNotes.includes('sáng, chiều') || rawNotes.includes('sang, chieu')
-    ) {
-      frequency = 2;
-    } else if (rawNotes.includes('cách 6 giờ') || rawNotes.includes('cách 6h') || rawNotes.includes('6-12-18-24')) {
-      frequency = 4;
-    } else if (
-      // BROAD-SPECTRUM BETA-LACTAM ANTIBIOTICS STANDARD HOSPITAL REGIMEN: 3 TIMES/DAY (cách 8 giờ: 7 - 15 - 23)
-      drugNameLower.includes('ceftazidim') ||
-      drugNameLower.includes('ceftazidime') ||
-      drugNameLower.includes('catachit') ||
-      drugNameLower.includes('meropenem') ||
-      drugNameLower.includes('imipenem') ||
-      drugNameLower.includes('tienam') ||
-      drugNameLower.includes('ampicillin') ||
-      drugNameLower.includes('unasyn') ||
-      drugNameLower.includes('amoxicillin/clavulanic') ||
-      drugNameLower.includes('klamentin') ||
-      drugNameLower.includes('metronidazol') ||
-      drugNameLower.includes('metronidazole') ||
-      (drugNameLower.includes('cefotaxim') && (qty === 3 || rawNotes.includes('3')))
-    ) {
-      frequency = 3;
-    } else if (
-      // STANDARD 2 TIMES/DAY (Khi qty >= 2 hoặc có chỉ định cách 12 giờ / sáng - chiều, hoặc thuốc PKD như Vinsalmol, Zensonid)
-      isVinsalmolOrPKD ||
-      ((drugNameLower.includes('cefotaxim') ||
-        drugNameLower.includes('cefotaxime') ||
-        drugNameLower.includes('cefoperazon') ||
-        drugNameLower.includes('cefoperazone') ||
-        drugNameLower.includes('sulperazon') ||
-        drugNameLower.includes('sulperazone') ||
-        drugNameLower.includes('ciprofloxacin') ||
-        drugNameLower.includes('levofloxacin')) && qty >= 2) ||
-      qty === 2
-    ) {
-      frequency = 2;
-    } else if (qty === 3) {
-      frequency = 3;
-    } else if (qty === 4) {
-      frequency = 4;
+    if (record.timeSlots && record.timeSlots.length > 0) {
+      frequency = record.timeSlots.length;
     } else {
-      frequency = 1;
+      const cleanNotesForFreq = rawNotes.replace(/nước cất[^,;]*\d+\s*ống/gi, '');
+      const freqExplicitMatch = cleanNotesForFreq.match(/(?:x\s*([1-4])\b)|(?:([1-4])\s*(?:lần\/ngày|l\/ngày|l\/ng|lần|cữ|cử)\b)|(?:ngày\s*([1-4])\s*(?:lần|cữ))/i);
+
+      if (freqExplicitMatch) {
+        const parsedFreq = parseInt(freqExplicitMatch[1] || freqExplicitMatch[2] || freqExplicitMatch[3], 10);
+        if (!isNaN(parsedFreq) && parsedFreq >= 1 && parsedFreq <= 4) {
+          frequency = parsedFreq;
+        }
+      } else if (
+        cleanNotesForFreq.includes('cách 8 giờ') || cleanNotesForFreq.includes('cách 8h') || cleanNotesForFreq.includes('cách 8 g') ||
+        cleanNotesForFreq.includes('7-15-23') || cleanNotesForFreq.includes('7h-15h-23h') || cleanNotesForFreq.includes('8-16-24') || cleanNotesForFreq.includes('8h-16h-24h') ||
+        cleanNotesForFreq.includes('7:05-15:05-23:05') || cleanNotesForFreq.includes('7h05-15h05-23h05') ||
+        cleanNotesForFreq.includes('7-13-19') || cleanNotesForFreq.includes('7h-13h-19h') || cleanNotesForFreq.includes('8-14-20') || cleanNotesForFreq.includes('8h-14h-20h')
+      ) {
+        frequency = 3;
+      } else if (
+        cleanNotesForFreq.includes('cách 12 giờ') || cleanNotesForFreq.includes('cách 12h') || cleanNotesForFreq.includes('cách 12 g') ||
+        cleanNotesForFreq.includes('7-19') || cleanNotesForFreq.includes('7h-19h') || cleanNotesForFreq.includes('9-21') || cleanNotesForFreq.includes('9h-21h') ||
+        cleanNotesForFreq.includes('8-20') || cleanNotesForFreq.includes('8h-20h') || cleanNotesForFreq.includes('sáng - chiều') || cleanNotesForFreq.includes('sang - chieu') ||
+        cleanNotesForFreq.includes('sáng, chiều') || cleanNotesForFreq.includes('sang, chieu')
+      ) {
+        frequency = 2;
+      } else if (cleanNotesForFreq.includes('cách 6 giờ') || cleanNotesForFreq.includes('cách 6h') || cleanNotesForFreq.includes('6-12-18-24')) {
+        frequency = 4;
+      } else if (qty === 3) {
+        frequency = 3;
+      } else if (qty === 4) {
+        frequency = 4;
+      } else if (qty === 2) {
+        frequency = 2;
+      } else if (
+        // Broad-spectrum IV antibiotics standard hospital regimen: 3 times/day (cách 8h: 7 - 15 - 23)
+        // Only if multiple doses indicated or quantity >= 3 or not explicitly 1
+        (drugNameLower.includes('ceftazidim') ||
+         drugNameLower.includes('catachit') ||
+         drugNameLower.includes('meropenem') ||
+         drugNameLower.includes('imipenem') ||
+         drugNameLower.includes('tienam') ||
+         drugNameLower.includes('ampicillin') ||
+         drugNameLower.includes('unasyn') ||
+         drugNameLower.includes('amoxicillin/clavulanic') ||
+         drugNameLower.includes('klamentin') ||
+         drugNameLower.includes('metronidazol')) &&
+        (qty >= 3 || rawNotes.includes('3') || !qty || qty === 0)
+      ) {
+        frequency = 3;
+      } else if (
+        ((drugNameLower.includes('cefotaxim') ||
+          drugNameLower.includes('cefoperazon') ||
+          drugNameLower.includes('ciprofloxacin') ||
+          drugNameLower.includes('levofloxacin')) && qty >= 2)
+      ) {
+        frequency = 2;
+      } else {
+        // Default frequency: strictly 1 time if quantity is 1 and no explicit notes say otherwise
+        frequency = 1;
+      }
     }
 
     // Format doseText (e.g. "1 x 3", "2/3 x 3", "1/2 x 2", "1 x 2", "1", "1/2")
+    if (record.timeSlots && record.timeSlots.length > 0) {
+      frequency = record.timeSlots.length;
+    }
     doseText = frequency > 1 ? `${singleDose} x ${frequency}` : singleDose;
 
     // 3. Calculate Time Slots & Schedule String
-    const explicitHourMatch = rawNotes.match(/(\d{1,2}(?:[:h]\d{2})?)(?:\s*[-–,;/]\s*(\d{1,2}(?:[:h]\d{2})?))(?:\s*[-–,;/]\s*(\d{1,2}(?:[:h]\d{2})?))?(?:\s*[-–,;/]\s*(\d{1,2}(?:[:h]\d{2})?))?/i);
-
-    if (explicitHourMatch && explicitHourMatch[1] && explicitHourMatch[2]) {
-      const rawParsed = [explicitHourMatch[1], explicitHourMatch[2], explicitHourMatch[3], explicitHourMatch[4]]
-        .filter(Boolean)
-        .map((s) => s.replace('h', ':'));
-
-      timeSlots = rawParsed;
+    if (record.timeSlots && record.timeSlots.length > 0) {
+      timeSlots = record.timeSlots;
       timeSchedule = timeSlots.join(' - ');
-    } else if (frequency === 3) {
-      if (hasMinute) {
-        const h1 = startHour;
-        const h2 = (startHour + 8) % 24;
-        const h3 = (startHour + 16) % 24;
-        const sortedHours = [h1, h2, h3].sort((a, b) => a - b);
-        timeSlots = sortedHours.map((h) => `${h}:${minuteStr}`);
-        timeSchedule = timeSlots.join(' - ');
-      } else {
-        if (startHour === 8 || startHour === 16) {
-          timeSlots = ['8', '16', '24'];
-          timeSchedule = '8 - 16 - 24';
-        } else {
-          timeSlots = ['7', '15', '23'];
-          timeSchedule = '7 - 15 - 23';
-        }
-      }
-    } else if (frequency === 2) {
-      if (hasMinute) {
-        const h1 = startHour;
-        const h2 = (startHour + 12) % 24;
-        const lower = Math.min(h1, h2);
-        const higher = Math.max(h1, h2);
-        timeSlots = [`${lower}:${minuteStr}`, `${higher}:${minuteStr}`];
-        timeSchedule = timeSlots.join(' - ');
-      } else {
-        if (startHour === 9 || startHour === 21 || rawNotes.includes('9h') || rawNotes.includes('21h') || rawTime.startsWith('09') || rawTime.startsWith('21')) {
-          timeSlots = ['9', '21'];
-          timeSchedule = '9 - 21';
-        } else if (startHour === 8 || startHour === 20 || rawNotes.includes('8h') || rawNotes.includes('20h')) {
-          timeSlots = ['8', '20'];
-          timeSchedule = '8 - 20';
-        } else {
-          timeSlots = ['7', '19'];
-          timeSchedule = '7 - 19';
-        }
-      }
-    } else if (frequency === 4) {
-      if (hasMinute) {
-        const h1 = startHour;
-        const h2 = (startHour + 6) % 24;
-        const h3 = (startHour + 12) % 24;
-        const h4 = (startHour + 18) % 24;
-        const sortedHours = [h1, h2, h3, h4].sort((a, b) => a - b);
-        timeSlots = sortedHours.map((h) => `${h}:${minuteStr}`);
-        timeSchedule = timeSlots.join(' - ');
-      } else {
-        timeSlots = ['7', '13', '19', '1'];
-        timeSchedule = '7 - 13 - 19 - 1';
-      }
     } else {
-      if (hasMinute) {
-        timeSlots = [`${startHour}:${minuteStr}`];
-        timeSchedule = `${startHour}:${minuteStr}`;
+      const explicitHourMatch = rawNotes.match(/(\d{1,2}(?:[:h]\d{2})?)(?:\s*[-–,;/]\s*(\d{1,2}(?:[:h]\d{2})?))(?:\s*[-–,;/]\s*(\d{1,2}(?:[:h]\d{2})?))?(?:\s*[-–,;/]\s*(\d{1,2}(?:[:h]\d{2})?))?/i);
+
+      if (explicitHourMatch && explicitHourMatch[1] && explicitHourMatch[2]) {
+        const rawParsed = [explicitHourMatch[1], explicitHourMatch[2], explicitHourMatch[3], explicitHourMatch[4]]
+          .filter(Boolean)
+          .map((s) => s.replace('h', ':'));
+
+        timeSlots = rawParsed;
+        timeSchedule = timeSlots.join(' - ');
+      } else if (frequency === 3) {
+        if (isVinsalmolOrPKD) {
+          // Aerosols (PKD) daytime schedule: 07:00 - 13:00 - 19:00 (cách 6 tiếng ban ngày)
+          if (hasMinute) {
+            timeSlots = [`${startHour}:${minuteStr}`, `${(startHour + 6) % 24}:${minuteStr}`, `${(startHour + 12) % 24}:${minuteStr}`];
+          } else {
+            timeSlots = startHour === 8 ? ['8', '14', '20'] : ['7', '13', '19'];
+          }
+        } else {
+          // IV Injections schedule: 07:00 - 15:00 - 23:00 (cách 8 tiếng)
+          if (hasMinute) {
+            const h1 = startHour;
+            const h2 = (startHour + 8) % 24;
+            const h3 = (startHour + 16) % 24;
+            const sortedHours = [h1, h2, h3].sort((a, b) => a - b);
+            timeSlots = sortedHours.map((h) => `${h}:${minuteStr}`);
+          } else {
+            if (startHour === 8 || startHour === 16) {
+              timeSlots = ['8', '16', '24'];
+            } else {
+              timeSlots = ['7', '15', '23'];
+            }
+          }
+        }
+        timeSchedule = timeSlots.join(' - ');
+      } else if (frequency === 2) {
+        if (hasMinute) {
+          const h1 = startHour;
+          const h2 = (startHour + 12) % 24;
+          const lower = Math.min(h1, h2);
+          const higher = Math.max(h1, h2);
+          timeSlots = [`${lower}:${minuteStr}`, `${higher}:${minuteStr}`];
+        } else {
+          if (startHour === 9 || startHour === 21 || rawNotes.includes('9h') || rawNotes.includes('21h') || rawTime.startsWith('09') || rawTime.startsWith('21')) {
+            timeSlots = ['9', '21'];
+          } else if (startHour === 8 || startHour === 20 || rawNotes.includes('8h') || rawNotes.includes('20h')) {
+            timeSlots = ['8', '20'];
+          } else {
+            timeSlots = ['7', '19'];
+          }
+        }
+        timeSchedule = timeSlots.join(' - ');
+      } else if (frequency === 4) {
+        if (hasMinute) {
+          const h1 = startHour;
+          const h2 = (startHour + 6) % 24;
+          const h3 = (startHour + 12) % 24;
+          const h4 = (startHour + 18) % 24;
+          const sortedHours = [h1, h2, h3, h4].sort((a, b) => a - b);
+          timeSlots = sortedHours.map((h) => `${h}:${minuteStr}`);
+        } else {
+          timeSlots = ['7', '13', '19', '1'];
+        }
+        timeSchedule = timeSlots.join(' - ');
       } else {
-        timeSlots = [`${startHour}`];
-        timeSchedule = `${startHour}`;
+        if (hasMinute) {
+          timeSlots = [`${startHour}:${minuteStr}`];
+          timeSchedule = `${startHour}:${minuteStr}`;
+        } else {
+          timeSlots = [`${startHour}`];
+          timeSchedule = `${startHour}`;
+        }
       }
     }
   }
@@ -631,8 +663,15 @@ export function normalizeDrugColumnHeader(drugFullName: string, route: string): 
     .trim();
 
   // Shorten common lengthy drug brands
-  if (nameLower.includes('vinsalmol')) {
-    shortName = 'Vinsalmol 5.0';
+  if (nameLower.includes('esogas') || nameLower.includes('esomeprazol')) {
+    shortName = 'Esogas 40mg';
+    routeLabel = 'TMC';
+  } else if (nameLower.includes('vinsamol') || nameLower.includes('vinsalmol')) {
+    shortName = 'Vinsamol 5.0';
+    routeLabel = 'PKD';
+  } else if (nameLower.includes('zensonide') || nameLower.includes('zensonid') || nameLower.includes('budesonid')) {
+    shortName = 'Zensonide';
+    routeLabel = 'PKD';
   } else if (nameLower.includes('hydrocortison')) {
     shortName = 'Hydrocortison 100mg';
   } else if (nameLower.includes('cefotaxim')) {
@@ -641,14 +680,14 @@ export function normalizeDrugColumnHeader(drugFullName: string, route: string): 
     shortName = 'Ceftazidim 1g';
   } else if (nameLower.includes('omevin') || nameLower.includes('omeprazol')) {
     shortName = 'Omevin 40mg';
+    routeLabel = 'TMC';
   } else if (nameLower.includes('zentamil') || nameLower.includes('gentamicin')) {
     shortName = 'Zentamil 0.5g';
-  } else if (nameLower.includes('zensonid') || nameLower.includes('budesonid')) {
-    shortName = 'Zensonid 0.5mg';
   } else if (nameLower.includes('catachit')) {
     shortName = 'Catachit 1g';
   } else if (nameLower.includes('acetyl leucin') || nameLower.includes('aleucin')) {
     shortName = 'Acetyl leucin 500mg';
+    routeLabel = 'TMC';
   } else if (nameLower.includes('medivernol') || nameLower.includes('ceftriaxon')) {
     shortName = 'Medivernol 1g';
   } else if (nameLower.includes('humalog')) {
@@ -851,14 +890,39 @@ export function buildNurseMatrixData(injections: ProcessedInjectionRecord[] = []
           drugLower.includes('klamentin') ||
           drugLower.includes('metronidazol');
 
-        const maxAllowed = is3DoseAntibiotic ? 3 : 4;
+        const isAerosol =
+          drugLower.includes('vinsalmol') ||
+          drugLower.includes('vinsamol') ||
+          drugLower.includes('zensonid') ||
+          drugLower.includes('zensonide') ||
+          drugLower.includes('pulmicort') ||
+          drugLower.includes('salbutamol') ||
+          drugLower.includes('budesonid') ||
+          (item.route || '').toLowerCase().includes('pkd');
 
-        // Merge and cluster time slots by shift window to eliminate duplicate hours and prevent 1x6
-        const mergedSlots = mergeAndNormalizeTimeSlots(existingCell.timeSlots, timeSlots, maxAllowed);
-
+        const currentOrderCount = (existingCell.orderCount || 1) + 1;
         const totalQty = (Number(existingCell.quantity) || 1) + (Number(item.quantity) || 1);
-        const totalFreq = mergedSlots.length;
-        
+        const maxAllowed = isAerosol ? 6 : (is3DoseAntibiotic ? 3 : 4);
+
+        // Merge and cluster time slots by shift window
+        let mergedSlots = mergeAndNormalizeTimeSlots(existingCell.timeSlots, timeSlots, maxAllowed);
+
+        // If multiple distinct order rows were present in Excel (e.g. 3 records or totalQty >= 3),
+        // we must NEVER collapse them down to 2 or 1!
+        const targetFreq = Math.max(mergedSlots.length, currentOrderCount, Math.floor(totalQty));
+
+        if (targetFreq > mergedSlots.length) {
+          if (targetFreq === 3) {
+            mergedSlots = isAerosol ? ['7', '13', '19'] : ['7', '15', '23'];
+          } else if (targetFreq === 2) {
+            mergedSlots = ['7', '19'];
+          } else if (targetFreq === 4) {
+            mergedSlots = ['7', '13', '19', '1'];
+          }
+        }
+
+        const totalFreq = Math.max(mergedSlots.length, targetFreq);
+
         // Determine base single dose (e.g. "1", "2/3", "1/2")
         const baseDose = existingCell.doseText.split(' x ')[0] || '1';
         const mergedDoseText = totalFreq > 1 ? `${baseDose} x ${totalFreq}` : baseDose;
@@ -873,6 +937,11 @@ export function buildNurseMatrixData(injections: ProcessedInjectionRecord[] = []
 
         const mergedIsExecuted = mergedSlotsExecuted.length > 0 ? mergedSlotsExecuted.every(Boolean) : false;
 
+        const combinedVerbatim = [
+          existingCell.detailVerbatim,
+          item.notes || item.drugFullName
+        ].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' | ');
+
         pRow.cells[id] = {
           ...existingCell,
           doseText: mergedDoseText,
@@ -881,7 +950,9 @@ export function buildNurseMatrixData(injections: ProcessedInjectionRecord[] = []
           timeSlotsExecuted: mergedSlotsExecuted,
           isExecuted: mergedIsExecuted,
           quantity: totalQty,
+          orderCount: currentOrderCount,
           notes: existingCell.notes || notesShort,
+          detailVerbatim: combinedVerbatim || existingCell.detailVerbatim || item.notes || item.drugFullName,
         };
       }
     } else {
@@ -896,15 +967,37 @@ export function buildNurseMatrixData(injections: ProcessedInjectionRecord[] = []
         timeSlotsExecuted: executedSlots,
         isExecuted: isAllExecuted,
         notes: notesShort || (item.changeStatus === 'NEW' ? '+ Mới' : undefined),
+        detailVerbatim: item.notes || item.drugFullName,
         changeStatus: item.changeStatus,
         route: routeLabel,
         unit: item.unit,
         quantity: item.quantity,
+        orderCount: 1,
         rawRecord: item,
       };
     }
 
     pRow.totalDrugs = Object.keys(pRow.cells).length;
+  });
+
+  // Post-process Rule 2: Cross-link Vinsamol and Zensonide for patients who use both
+  patientMap.forEach((pRow) => {
+    const vinsamolKey = Object.keys(pRow.cells).find((k) => {
+      const s = pRow.cells[k].shortName.toLowerCase();
+      return s.includes('vinsamol') || s.includes('vinsalmol');
+    });
+    const zensonideKey = Object.keys(pRow.cells).find((k) => {
+      const s = pRow.cells[k].shortName.toLowerCase();
+      return s.includes('zensonid') || s.includes('zensonide');
+    });
+
+    if (vinsamolKey && zensonideKey) {
+      const vCell = pRow.cells[vinsamolKey];
+      const zCell = pRow.cells[zensonideKey];
+      const zCount = zCell.timeSlots.length;
+      const zSchedule = zCell.timeSchedule;
+      vCell.notes = `+ có Zensonide ${zCount} lần (${zSchedule})`;
+    }
   });
 
   // Sort patient rows by Zone, then Room, then Patient Name

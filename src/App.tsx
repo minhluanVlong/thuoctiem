@@ -51,6 +51,8 @@ import { ExcludedItemsTable } from './components/ExcludedItemsTable';
 import { PrintModal } from './components/PrintModal';
 import { DuplicateWarningModal } from './components/DuplicateWarningModal';
 import { MedicationReconciliationModal } from './components/MedicationReconciliationModal';
+import { AiOrderExtractionModal } from './components/AiOrderExtractionModal';
+import { MatrixJsonFormat, convertMatrixJsonToInjections } from './types/matrixJson';
 
 export default function App() {
   // Hospital Settings State
@@ -79,6 +81,20 @@ export default function App() {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState<boolean>(false);
   const [isReconciliationModalOpen, setIsReconciliationModalOpen] = useState<boolean>(false);
+  const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
+
+  // Apply parsed Matrix JSON data
+  const handleApplyMatrixJson = useCallback((jsonData: MatrixJsonFormat) => {
+    const converted = convertMatrixJsonToInjections(
+      jsonData,
+      selectedDate || new Date().toLocaleDateString('vi-VN')
+    );
+    setInjections(converted);
+    setPendingChecks([]);
+    setExcludedItems([]);
+    setActiveTab('NURSE_MATRIX');
+    setSelectedWard('ALL');
+  }, [selectedDate]);
 
   // Derived Book Data for dynamic counts
   const bookData = useMemo(() => {
@@ -311,6 +327,7 @@ export default function App() {
         onOpenPrint={() => setIsPrintModalOpen(true)}
         onReset={handleReset}
         onViewBook={() => setActiveTab('FOUR_COLUMN_BOOK')}
+        onOpenAiModal={() => setIsAiModalOpen(true)}
         hasData={hasData}
       />
 
@@ -322,6 +339,7 @@ export default function App() {
           onUploadDrugFile={handleUploadDrugFile}
           onProcessData={() => executeProcessing(rawDrugRecords)}
           onLoadSampleData={handleLoadDemo}
+          onOpenAiModal={() => setIsAiModalOpen(true)}
           isProcessing={isProcessing}
           hasData={hasData}
           totalDrugRecords={rawDrugRecords.length}
@@ -463,6 +481,18 @@ export default function App() {
                     )}
                   </button>
                 )}
+
+                {/* AI Bóc tách Y lệnh (Ảnh / JSON) Button */}
+                <button
+                  id="tab-btn-ai-extract"
+                  type="button"
+                  onClick={() => setIsAiModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg transition-all text-teal-900 bg-teal-50 hover:bg-teal-100 border border-teal-300 shadow-2xs cursor-pointer"
+                  title="Bóc tách dữ liệu từ hình ảnh báo cáo y lệnh hoặc nhập JSON ma trận bằng AI Gemini"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  <span>AI Bóc tách Ma trận</span>
+                </button>
               </div>
 
               {/* Quick Info in tab bar */}
@@ -503,6 +533,7 @@ export default function App() {
                 onBatchToggleExecution={handleBatchToggleExecution}
                 onOpenPrintModal={() => setIsPrintModalOpen(true)}
                 onExportExcel={handleExportExcel}
+                onOpenAiModal={() => setIsAiModalOpen(true)}
               />
             )}
 
@@ -621,6 +652,14 @@ export default function App() {
           report={reconciliationReport}
         />
       )}
+
+      {/* AI Vision & JSON Matrix Extraction Modal */}
+      <AiOrderExtractionModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+        onApplyMatrixJson={handleApplyMatrixJson}
+        currentInjections={injections}
+      />
     </div>
   );
 }

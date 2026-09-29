@@ -20,6 +20,7 @@ interface UploadSectionProps {
   onUploadDrugFile: (file: File) => void;
   onProcessData: () => void;
   onLoadSampleData: () => void;
+  onOpenAiModal?: () => void;
   isProcessing: boolean;
   hasData: boolean;
   totalDrugRecords: number;
@@ -30,6 +31,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   onUploadDrugFile,
   onProcessData,
   onLoadSampleData,
+  onOpenAiModal,
   isProcessing,
   hasData,
   totalDrugRecords,
@@ -62,7 +64,18 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3 text-xs text-slate-600">
+        <div className="flex items-center gap-3 text-xs text-slate-600 flex-wrap">
+          {onOpenAiModal && (
+            <button
+              type="button"
+              onClick={onOpenAiModal}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-teal-800 hover:bg-teal-900 text-white font-bold transition-all shadow-xs cursor-pointer border border-teal-700"
+              title="Bóc tách y lệnh từ hình ảnh hoặc dán JSON ma trận bằng AI Gemini"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              Bóc tách Y lệnh AI (Ảnh / JSON)
+            </button>
+          )}
           <button
             type="button"
             onClick={onLoadSampleData}
@@ -70,7 +83,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             title="Nạp dữ liệu thực tế mẫu 90 dòng BV Đa Khoa KV Chợ Lách để xem thử"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-            Nạp dữ liệu mẫu BV Chợ Lách
+            Nạp mẫu BV Chợ Lách
           </button>
           <div className="hidden sm:flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />

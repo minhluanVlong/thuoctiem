@@ -168,10 +168,10 @@ export function classifyMedicationItem(params: {
     'morphin', 'fentanyl', 'pethidin', 'enoxaparin', 'lovenox', 'heparin', 'insulin', 'actrapid',
     'novorapid', 'lantus', 'mixtard', 'furosemide', 'lasix', 'methylprednisolon', 'solu-medrol',
     'hydrocortison', 'dexamethason', 'ondansetron', 'metoclopramid', 'pantoprazol', 'esomeprazol',
-    'omeprazol', 'diazepam', 'midazolam', 'propofol', 'adrenalin', 'epinephrine', 'noradrenalin',
+    'esogas', 'esomeprazol', 'esomeprazole', 'omevin', 'omeprazol', 'diazepam', 'midazolam', 'propofol', 'adrenalin', 'epinephrine', 'noradrenalin',
     'dopamin', 'dobutamin', 'atropin', 'tranexamic acid', 'transamin', 'vitamin k1', 'acetyl leucin',
     'aleucin', 'calci clorid', 'calci gluconat', 'magnesi sulfat', 'paracetamol truyền', 'perfalgan',
-    'vinsalmol', 'zensonid', 'pulmicort', 'berodual', 'ventolin', 'salbutamol', 'combivent', 'budesonide'
+    'vinsamol', 'vinsalmol', 'zensonide', 'zensonid', 'pulmicort', 'berodual', 'ventolin', 'salbutamol', 'combivent', 'budesonide'
   ];
 
   for (const drug of commonInjDrugs) {

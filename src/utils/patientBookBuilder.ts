@@ -581,7 +581,28 @@ export function buildGroupedInjectionBook(injections: ProcessedInjectionRecord[]
       });
     } else {
       const existing = patientGroupsMap.get(patientKey)!;
-      existing.medications.push(medItem);
+      // Check if this patient already has this medication
+      const existingMedIndex = existing.medications.findIndex((m) => {
+        const nameA = (m.originalDrugName || m.drugFullName).toLowerCase();
+        const nameB = (medItem.originalDrugName || medItem.drugFullName).toLowerCase();
+        return nameA === nameB ||
+          ((nameA.includes('vinsamol') || nameA.includes('vinsalmol')) && (nameB.includes('vinsamol') || nameB.includes('vinsalmol'))) ||
+          ((nameA.includes('zensonid') || nameA.includes('zensonide')) && (nameB.includes('zensonid') || nameB.includes('zensonide')));
+      });
+
+      if (existingMedIndex >= 0 && !medItem.isInsulin) {
+        // Merge multiple orders of the same drug for the patient
+        const existingMed = existing.medications[existingMedIndex];
+        const combinedSlots = Array.from(new Set([...(existingMed.timeSlots || []), ...(medItem.timeSlots || [])]));
+        const totalCount = Math.max(combinedSlots.length, (Number(existingMed.quantity) || 1) + (Number(medItem.quantity) || 1));
+        const baseDose = existingMed.frequencyText.split(' x ')[0] || '1';
+        existingMed.timeSlots = combinedSlots;
+        existingMed.timeScheduleText = formatHospitalHours(combinedSlots, medItem.rawOrderTime);
+        existingMed.frequencyText = totalCount > 1 ? `${baseDose} x ${totalCount}` : baseDose;
+        existingMed.quantity = (Number(existingMed.quantity) || 1) + (Number(medItem.quantity) || 1);
+      } else {
+        existing.medications.push(medItem);
+      }
       existing.totalMedications = existing.medications.length;
       if (needsReview) {
         existing.hasWarning = true;

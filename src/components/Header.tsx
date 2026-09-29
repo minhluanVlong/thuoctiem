@@ -24,6 +24,7 @@ interface HeaderProps {
   onOpenPrint: () => void;
   onReset: () => void;
   onViewBook?: () => void;
+  onOpenAiModal?: () => void;
   hasData: boolean;
 }
 
@@ -40,6 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenPrint,
   onReset,
   onViewBook,
+  onOpenAiModal,
   hasData,
 }) => {
   const [isEditingInfo, setIsEditingInfo] = useState(false);
@@ -143,6 +145,19 @@ export const Header: React.FC<HeaderProps> = ({
                 </select>
               )}
             </div>
+
+            {/* AI Vision & JSON Matrix Extraction */}
+            {onOpenAiModal && (
+              <button
+                id="btn-open-ai-modal"
+                onClick={onOpenAiModal}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-teal-50 text-teal-900 border border-teal-300 hover:bg-teal-100 transition-colors shadow-xs cursor-pointer"
+                title="Bóc tách dữ liệu từ hình ảnh báo cáo y lệnh hoặc dán JSON ma trận bằng AI Gemini"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                AI Bóc tách Y lệnh
+              </button>
+            )}
 
             {/* Load Sample Demo */}
             {!hasData && (

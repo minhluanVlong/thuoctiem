@@ -22,6 +22,7 @@ import {
   convertMatrixJsonToInjections,
   convertInjectionsToMatrixJson
 } from '../types/matrixJson';
+import { MEDICAL_EXTRACTION_SYSTEM_PROMPT } from '../utils/geminiPrompt';
 import { ProcessedInjectionRecord } from '../types/hospital';
 
 interface AiOrderExtractionModalProps {
@@ -123,7 +124,7 @@ export const AiOrderExtractionModal: React.FC<AiOrderExtractionModalProps> = ({
     setSelectedImages((prev) => prev.filter((img) => img.id !== id));
   };
 
-  // Run AI Extraction via backend proxy `/api/extract-matrix`
+  // Run AI Extraction via backend proxy `/api/extract-matrix` or client-side fallback
   const handleRunAiExtraction = async () => {
     if (selectedImages.length === 0 && !supplementalText.trim()) {
       setExtractionError('Vui lòng chọn ít nhất 1 ảnh y lệnh hoặc dán nội dung báo cáo y lệnh.');
@@ -139,27 +140,77 @@ export const AiOrderExtractionModal: React.FC<AiOrderExtractionModalProps> = ({
         mimeType: img.mimeType || 'image/jpeg',
       }));
 
-      const response = await fetch('/api/extract-matrix', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          images: payloadImages,
-          text: supplementalText,
-        }),
-      });
+      let extractedData: any = null;
 
-      const result = await response.json();
+      // 1. Try server-side proxy route first (when running on full-stack dev/production server)
+      try {
+        const response = await fetch('/api/extract-matrix', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            images: payloadImages,
+            text: supplementalText,
+          }),
+        });
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Máy chủ không thể bóc tách dữ liệu');
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data) {
+            extractedData = result.data;
+          }
+        }
+      } catch (backendErr) {
+        // Backend not reachable, will check client key fallback
       }
 
-      setExtractedPreview(result.data);
-      setJsonInputText(JSON.stringify(result.data, null, 2));
+      // 2. If backend was not available (e.g. running statically on GitHub Pages), try client-side Gemini call
+      if (!extractedData) {
+        const clientApiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
+        if (clientApiKey) {
+          const { GoogleGenAI } = await import('@google/genai');
+          const ai = new GoogleGenAI({ apiKey: clientApiKey });
+
+          const promptParts: any[] = [];
+          for (const img of payloadImages) {
+            promptParts.push({
+              inlineData: {
+                data: img.data,
+                mimeType: img.mimeType,
+              },
+            });
+          }
+
+          const userText = `${MEDICAL_EXTRACTION_SYSTEM_PROMPT}${supplementalText ? `\nThông tin văn bản bổ sung:\n${supplementalText}` : ''}`;
+          promptParts.push({ text: userText });
+
+          const aiResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: promptParts,
+            config: {
+              responseMimeType: 'application/json',
+            },
+          });
+
+          const rawText = aiResponse.text || '';
+          try {
+            extractedData = JSON.parse(rawText.trim());
+          } catch {
+            const cleaned = rawText.replace(/```(?:json)?/g, '').trim();
+            extractedData = JSON.parse(cleaned);
+          }
+        }
+      }
+
+      if (!extractedData) {
+        throw new Error('Chưa thể kết nối dịch vụ AI bóc tách. Trên GitHub Pages, cần có API Key trong GitHub Secrets hoặc dùng tính năng Nạp Dữ Liệu Mẫu.');
+      }
+
+      setExtractedPreview(extractedData);
+      setJsonInputText(JSON.stringify(extractedData, null, 2));
     } catch (err: any) {
-      console.warn('AI Extraction server request failed, offering fallback demo data:', err);
+      console.warn('AI Extraction request failed, offering fallback demo data:', err);
       setExtractionError(`Chưa thể gọi AI trích xuất: ${err.message}. Bạn có thể bấm "Nạp Dữ Liệu Mẫu Chuẩn" bên dưới để xem thử ma trận.`);
     } finally {
       setIsExtracting(false);
